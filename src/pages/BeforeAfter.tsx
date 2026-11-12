@@ -1,15 +1,26 @@
-import { useState } from 'react'
-import { TRANSFORMATIONS } from '../data/transformations'
+import { useState, useEffect } from 'react'
+import { TRANSFORMATIONS, Transformation } from '../data/transformations'
+import { DataService } from '../services/dataService'
 
 type FilterType = 'all' | 'wood' | 'aluminium'
 
 export default function BeforeAfter() {
+  const [items, setItems] = useState<Transformation[]>(TRANSFORMATIONS)
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
   const [sliderValues, setSliderValues] = useState<Record<string, number>>(() =>
     Object.fromEntries(TRANSFORMATIONS.map(t => [t.id, 50]))
   )
 
-  const filtered = TRANSFORMATIONS.filter(t =>
+  useEffect(() => {
+    DataService.fetchTransformations().then(loaded => {
+      if (loaded && loaded.length > 0) {
+        setItems(loaded)
+        setSliderValues(Object.fromEntries(loaded.map(t => [t.id, 50])))
+      }
+    })
+  }, [])
+
+  const filtered = items.filter(t =>
     activeFilter === 'all' || t.type === activeFilter
   )
 
@@ -189,4 +200,3 @@ export default function BeforeAfter() {
     </div>
   )
 }
-

@@ -3,13 +3,14 @@ export interface VillagePin {
   name: string
   nameHindi: string
   distanceKm: number
-  positionX: number
-  positionY: number
+  lat: number
+  lng: number
   workCount: number
   rating: number
   featuredWorkTitle: string
   featuredWorkTitleHindi: string
   image: string
+  videoUrl?: string
   quote: string
   quoteAuthor: string
   workType: string
@@ -35,8 +36,17 @@ export interface VideoReview {
   villageHindi: string
   duration: string
   thumbnail: string
+  videoUrl?: string
   quote: string
   verified: boolean
+}
+
+export const WORKSHOP_LOCATION = {
+  name: 'Sharma Ji Workshop (Main Workshop Hub)',
+  nameHindi: 'शर्मा जी मुख्य वर्कशॉप (रामपुर)',
+  lat: 28.9800,
+  lng: 77.7800,
+  address: 'Main Bilaspur Road, Near Old Grain Market, Rampur',
 }
 
 export const VILLAGE_PINS: VillagePin[] = [
@@ -45,13 +55,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Rampur',
     nameHindi: 'रामपुर (मुख्यालय)',
     distanceKm: 0,
-    positionX: 50,
-    positionY: 50,
+    lat: 28.9800,
+    lng: 77.7800,
     workCount: 180,
     rating: 5.0,
     featuredWorkTitle: 'Hand-Carved Sagwan Temple & Main Door',
     featuredWorkTitleHindi: 'पंडित जी का सागवान नक्काशीदार मंदिर व मुख्य द्वार',
     image: 'https://placehold.co/500x350/542809/ffdbc9?text=Rampur+Featured+Work',
+    videoUrl: '',
     quote: '"शर्मा जी ने 10 साल पहले हमारे घर का मुख्य दरवाजा और मंदिर बनाया था। आज तक एक भी पेंच ढीला नहीं हुआ।"',
     quoteAuthor: 'Sukhbeer Ji, Rampur',
     workType: 'Main Door & Sagwan Mandir',
@@ -64,13 +75,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Bilaspur',
     nameHindi: 'बिलासपुर',
     distanceKm: 6,
-    positionX: 30,
-    positionY: 70,
+    lat: 28.8800,
+    lng: 77.6500,
     workCount: 95,
     rating: 4.9,
     featuredWorkTitle: 'Commercial Aluminium Glass Shopfront',
     featuredWorkTitleHindi: 'प्रदीप जी इलेक्ट्रॉनिक्स: कमर्शियल एल्युमिनियम फ्रंट',
     image: 'https://placehold.co/500x350/263447/acbbd2?text=Bilaspur+Shopfront',
+    videoUrl: '',
     quote: '"शर्मा जी ने 18 गेज के जिंदल सेक्शन से ऐसा शीशा लगाया कि AC की ठंडक अंदर ही रहती है।"',
     quoteAuthor: 'Pradeep Kumar, Bilaspur',
     workType: 'Shop Front & Glass Partition',
@@ -83,13 +95,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Kithore',
     nameHindi: 'किठौर',
     distanceKm: 11,
-    positionX: 70,
-    positionY: 65,
+    lat: 28.8667,
+    lng: 77.9833,
     workCount: 72,
     rating: 5.0,
     featuredWorkTitle: 'Sheesham Tractor Trolley & Farm Shed',
     featuredWorkTitleHindi: 'चौधरी जगजीत: शीशम ट्रैक्टर ट्रॉली व फार्म शेड',
     image: 'https://placehold.co/500x350/52443c/ffdbc9?text=Kithore+Trolley',
+    videoUrl: '',
     quote: '"गन्ने की भारी भराई में भी लकड़ी हिली नहीं। पिछले 6 सालों से ट्रॉली धुआंधार चल रही है।"',
     quoteAuthor: 'Jagjit Singh, Kithore',
     workType: 'Trolley Body & Farm Shed',
@@ -102,13 +115,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Daurala',
     nameHindi: 'दौराला',
     distanceKm: 14,
-    positionX: 25,
-    positionY: 30,
+    lat: 29.1167,
+    lng: 77.7167,
     workCount: 64,
     rating: 4.8,
     featuredWorkTitle: 'Colony Aluminium Sliding Windows',
     featuredWorkTitleHindi: 'मिल कॉलोनी: जिंदल स्लाइडिंग विंडो व बालकनी ग्रिल',
     image: 'https://placehold.co/500x350/263447/d5e3fc?text=Daurala+Windows',
+    videoUrl: '',
     quote: '"बारिश के पानी की सीलन से परेशान थे। एल्युमिनियम खिड़कियाँ लगने के बाद आवाज और सीलन दोनों बंद।"',
     quoteAuthor: 'Verma Ji, Daurala',
     workType: 'Sliding Windows & Mosquito Net',
@@ -121,13 +135,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Sardhana',
     nameHindi: 'सरधना',
     distanceKm: 18,
-    positionX: 15,
-    positionY: 50,
+    lat: 29.1500,
+    lng: 77.6167,
     workCount: 50,
     rating: 5.0,
     featuredWorkTitle: 'Heritage Haveli Sagwan Restoration',
     featuredWorkTitleHindi: 'पुरातन हवेली का सागवान चौखट व नक्काशी रीस्टोरेशन',
     image: 'https://placehold.co/500x350/6f3e1e/ffdbc9?text=Sardhana+Heritage+Door',
+    videoUrl: '',
     quote: '"100 साल पुरानी हवेली की चौखट थी। शर्मा जी ने बिल्कुल उसी डिजाइन में नई बनाई।"',
     quoteAuthor: 'Sharma Family, Sardhana',
     workType: 'Heritage Restoration',
@@ -140,13 +155,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Mawana',
     nameHindi: 'मवाना',
     distanceKm: 22,
-    positionX: 75,
-    positionY: 30,
+    lat: 29.1000,
+    lng: 77.9167,
     workCount: 42,
     rating: 4.9,
     featuredWorkTitle: 'Industrial Aluminium Windows & Partitions',
     featuredWorkTitleHindi: 'कमर्शियल एल्युमिनियम विंडो व इंटीरियर पार्टीशन',
     image: 'https://placehold.co/500x350/263447/acbbd2?text=Mawana+Partitions',
+    videoUrl: '',
     quote: '"शर्मा जी का काम समय पर और दाम में बिल्कुल सही। कोई छुपा हुआ चार्ज नहीं।"',
     quoteAuthor: 'Ramesh Tyagi, Mawana',
     workType: 'Office Windows & Partitions',
@@ -159,13 +175,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Hastinapur',
     nameHindi: 'हस्तिनापुर',
     distanceKm: 28,
-    positionX: 85,
-    positionY: 20,
+    lat: 29.1667,
+    lng: 78.0167,
     workCount: 30,
     rating: 4.8,
     featuredWorkTitle: 'Temple Committee Hall Doors & Windows',
     featuredWorkTitleHindi: 'मंदिर समिति: हॉल के दरवाजे और खिड़कियाँ',
     image: 'https://placehold.co/500x350/542809/ffdbc9?text=Hastinapur+Temple+Work',
+    videoUrl: '',
     quote: '"मंदिर के लिए सागवान के दरवाजे बनवाए। पूरी समिति खुश है। बहुत शानदार काम।"',
     quoteAuthor: 'Temple Committee, Hastinapur',
     workType: 'Temple Hall Doors & Windows',
@@ -178,13 +195,14 @@ export const VILLAGE_PINS: VillagePin[] = [
     name: 'Lawar',
     nameHindi: 'लावर',
     distanceKm: 20,
-    positionX: 50,
-    positionY: 15,
+    lat: 29.1167,
+    lng: 77.7833,
     workCount: 35,
     rating: 4.9,
     featuredWorkTitle: 'Complete Home Furnishing - 3 BHK',
     featuredWorkTitleHindi: 'पूरे 3 BHK घर का फर्नीचर',
     image: 'https://placehold.co/500x350/904d00/ffdcc3?text=Lawar+Home+Furnishing',
+    videoUrl: '',
     quote: '"नए घर का पूरा फर्नीचर शर्मा जी से बनवाया। दरवाजे, खिड़कियाँ, अलमारी, बेड—सब कुछ।"',
     quoteAuthor: 'Vikas Sharma, Lawar',
     workType: 'Full Home - Doors, Windows, Almirahs, Beds',
@@ -244,4 +262,3 @@ export const VIDEO_REVIEWS: VideoReview[] = [
     verified: true,
   },
 ]
-

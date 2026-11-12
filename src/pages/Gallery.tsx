@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { GALLERY, GalleryCategory, GalleryItem } from '../data/gallery'
+import { DataService } from '../services/dataService'
 
 const CATEGORIES: { key: GalleryCategory | 'all'; labelH: string }[] = [
   { key: 'all', labelH: 'सभी फोटो' },
@@ -12,10 +13,19 @@ const CATEGORIES: { key: GalleryCategory | 'all'; labelH: string }[] = [
 ]
 
 export default function Gallery() {
+  const [items, setItems] = useState<GalleryItem[]>(GALLERY)
   const [activeCategory, setActiveCategory] = useState<GalleryCategory | 'all'>('all')
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null)
 
-  const filtered = activeCategory === 'all' ? GALLERY : GALLERY.filter(g => g.category === activeCategory)
+  useEffect(() => {
+    DataService.fetchGallery().then(loaded => {
+      if (loaded && loaded.length > 0) {
+        setItems(loaded)
+      }
+    })
+  }, [])
+
+  const filtered = activeCategory === 'all' ? items : items.filter(g => g.category === activeCategory)
 
   return (
     <div className="flex flex-col w-full">
@@ -134,4 +144,3 @@ export default function Gallery() {
     </div>
   )
 }
-

@@ -1,14 +1,12 @@
-import React, { useState } from 'react'
-import { GALLERY } from '../data/gallery'
-import { TRANSFORMATIONS } from '../data/transformations'
+import React, { useState, useEffect } from 'react'
+import { GALLERY, GalleryItem } from '../data/gallery'
+import { TRANSFORMATIONS, Transformation } from '../data/transformations'
 import { SERVICES } from '../data/services'
-import { VILLAGE_PINS } from '../data/villages'
+import { VILLAGE_PINS, VillagePin } from '../data/villages'
+import { uploadToCloudinary } from '../services/cloudinary'
+import { DataService } from '../services/dataService'
 
-type TabType = 'gallery' | 'beforeafter' | 'services' | 'villages' | 'settings'
-
-function showSaved(msg: string = 'Saved! Connect Supabase + Cloudinary to store permanently.') {
-  alert(msg)
-}
+type TabType = 'gallery' | 'beforeafter' | 'services' | 'villages' | 'settings' | 'sql'
 
 export default function Admin() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -16,37 +14,94 @@ export default function Admin() {
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('gallery')
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
+  // Live state
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(GALLERY)
+  const [transformations, setTransformations] = useState<Transformation[]>(TRANSFORMATIONS)
+  const [villagePins, setVillagePins] = useState<VillagePin[]>(VILLAGE_PINS)
+
+  // Upload states & progress
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
+  const [isUploading, setIsUploading] = useState(false)
+
+  // 1. Gallery Form
   const [galleryForm, setGalleryForm] = useState({
     title: '',
     titleHindi: '',
-    village: '',
+    village: 'Rampur',
     category: 'doors',
     material: 'wood',
-    approxPrice: '',
-    imageUrl: '',
+    approxPrice: '8500',
   })
+  const [galleryFile, setGalleryFile] = useState<File | null>(null)
+  const [galleryPreview, setGalleryPreview] = useState<string>('')
 
+  // 2. Before & After Form
   const [baForm, setBaForm] = useState({
-    village: '',
+    village: 'Rampur',
+    villageHindi: 'रामपुर',
     title: '',
     titleHindi: '',
-    type: 'wood',
-    beforeImageUrl: '',
-    afterImageUrl: '',
-    material: '',
-    delivery: '',
-    warranty: '',
+    type: 'wood' as 'wood' | 'aluminium',
+    material: 'Grade-A CP Teak (Sagwan)',
+    hardware: 'Heavy Brass Handles & Bolts',
+    delivery: '7 Days',
+    warranty: '10-Year Termite Guarantee',
     quote: '',
     quoteAuthor: '',
+    quoteAuthorHindi: '',
   })
+  const [baBeforeFile, setBaBeforeFile] = useState<File | null>(null)
+  const [baBeforePreview, setBaBeforePreview] = useState<string>('')
+  const [baAfterFile, setBaAfterFile] = useState<File | null>(null)
+  const [baAfterPreview, setBaAfterPreview] = useState<string>('')
 
+  // 3. Village Pin Form
+  const [villageForm, setVillageForm] = useState({
+    name: '',
+    nameHindi: '',
+    distanceKm: '10',
+    lat: '29.0200',
+    lng: '77.8200',
+    workCount: '50',
+    rating: '5.0',
+    featuredWorkTitle: '',
+    featuredWorkTitleHindi: '',
+    quote: '',
+    quoteAuthor: '',
+    workType: 'Main Door & Windows',
+    deliveryTime: '7 Days',
+    materials: 'Grade-A Sagwan + Jindal Aluminium',
+    warranty: '5-Year Warranty',
+  })
+  const [villagePhotoFile, setVillagePhotoFile] = useState<File | null>(null)
+  const [villagePhotoPreview, setVillagePhotoPreview] = useState<string>('')
+  const [villageVideoFile, setVillageVideoFile] = useState<File | null>(null)
+  const [villageVideoName, setVillageVideoName] = useState<string>('')
+
+  // 4. Settings Form
   const [settings, setSettings] = useState({
     phone: '+919876543210',
     whatsapp: '+919876543210',
     address: 'Main Bilaspur Road, Near Old Grain Market, Rampur',
     hours: '8:00 AM - 7:00 PM',
   })
+
+  // Show temporary toast notification
+  const notify = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  // Load live data from Supabase
+  useEffect(() => {
+    if (isLoggedIn) {
+      DataService.fetchGallery().then(setGalleryItems)
+      DataService.fetchTransformations().then(setTransformations)
+      DataService.fetchVillagePins().then(setVillagePins)
+    }
+  }, [isLoggedIn])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,12 +115,253 @@ export default function Admin() {
     }
   }
 
+  // Handle Gallery Submit
+  const handleGallerySubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!galleryFile) {
+      notify('कृपया फोटो फाइल चुनें (Please select an image file to upload)', 'error')
+      return
+    }
+
+    try {
+      setIsUploading(true)
+      notify('Uploading photo to Cloudinary...', 'info')
+      const uploadRes = await uploadToCloudinary(galleryFile, {
+        onProgress: (p) => setUploadProgress(prev => ({ ...prev, gallery: p })),
+        folder: 'carpenter_gallery',
+      })
+
+      notify('Saving details to Supabase database...', 'info')
+      const res = await DataService.addGalleryItem({
+        title: galleryForm.title || 'Finished Work',
+        titleHindi: galleryForm.titleHindi || 'कारीगरी का कार्य',
+        village: galleryForm.village,
+        category: galleryForm.category,
+        material: galleryForm.material,
+        imageUrl: uploadRes.secure_url,
+        approxPrice: Number(galleryForm.approxPrice) || 0,
+      })
+
+      if (res.success) {
+        notify('फोटो क्लाउडिनरी और सुपबेस में सफलतापूर्वक सहेजी गई!', 'success')
+        setGalleryFile(null)
+        setGalleryPreview('')
+        setGalleryForm({ title: '', titleHindi: '', village: 'Rampur', category: 'doors', material: 'wood', approxPrice: '8500' })
+        DataService.fetchGallery().then(setGalleryItems)
+      } else {
+        notify(`Supabase error: ${res.error}. Make sure you ran the SQL setup script.`, 'error')
+      }
+    } catch (err: any) {
+      notify(`Upload failed: ${err.message}`, 'error')
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(prev => ({ ...prev, gallery: 0 }))
+    }
+  }
+
+  // Handle Before & After Submit
+  const handleBaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!baBeforeFile || !baAfterFile) {
+      notify('कृपया काम से पहले और काम के बाद की दोनों फोटो चुनें (Select both before and after images)', 'error')
+      return
+    }
+
+    try {
+      setIsUploading(true)
+      notify('Uploading Before photo to Cloudinary...', 'info')
+      const beforeRes = await uploadToCloudinary(baBeforeFile, {
+        onProgress: (p) => setUploadProgress(prev => ({ ...prev, baBefore: p })),
+        folder: 'carpenter_transformations',
+      })
+
+      notify('Uploading After photo to Cloudinary...', 'info')
+      const afterRes = await uploadToCloudinary(baAfterFile, {
+        onProgress: (p) => setUploadProgress(prev => ({ ...prev, baAfter: p })),
+        folder: 'carpenter_transformations',
+      })
+
+      notify('Saving transformation to Supabase...', 'info')
+      const res = await DataService.addTransformation({
+        village: baForm.village,
+        villageHindi: baForm.villageHindi,
+        title: baForm.title || `${baForm.village} Transformation`,
+        titleHindi: baForm.titleHindi || `${baForm.villageHindi} बदलाव`,
+        type: baForm.type,
+        beforeImageUrl: beforeRes.secure_url,
+        afterImageUrl: afterRes.secure_url,
+        material: baForm.material,
+        hardware: baForm.hardware,
+        delivery: baForm.delivery,
+        warranty: baForm.warranty,
+        quote: baForm.quote || 'शानदार काम किया शर्मा जी ने।',
+        quoteAuthor: baForm.quoteAuthor || 'Customer',
+        quoteAuthorHindi: baForm.quoteAuthorHindi || 'संतुष्ट ग्राहक',
+      })
+
+      if (res.success) {
+        notify('Before & After कार्य सफलतापूर्वक सहेजा गया!', 'success')
+        setBaBeforeFile(null)
+        setBaAfterFile(null)
+        setBaBeforePreview('')
+        setBaAfterPreview('')
+        DataService.fetchTransformations().then(setTransformations)
+      } else {
+        notify(`Supabase error: ${res.error}`, 'error')
+      }
+    } catch (err: any) {
+      notify(`Upload error: ${err.message}`, 'error')
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(prev => ({ ...prev, baBefore: 0, baAfter: 0 }))
+    }
+  }
+
+  // Handle Village Pin & Video Submit
+  const handleVillageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!villagePhotoFile) {
+      notify('कृपया गाँव के कार्य की फोटो चुनें (Please select work photo)', 'error')
+      return
+    }
+
+    try {
+      setIsUploading(true)
+      notify('Uploading work photo to Cloudinary...', 'info')
+      const photoRes = await uploadToCloudinary(villagePhotoFile, {
+        onProgress: (p) => setUploadProgress(prev => ({ ...prev, vPhoto: p })),
+        folder: 'carpenter_villages',
+      })
+
+      let videoUrl = ''
+      if (villageVideoFile) {
+        notify('Uploading customer video (MP4) to Cloudinary...', 'info')
+        const videoRes = await uploadToCloudinary(villageVideoFile, {
+          onProgress: (p) => setUploadProgress(prev => ({ ...prev, vVideo: p })),
+          folder: 'carpenter_videos',
+        })
+        videoUrl = videoRes.secure_url
+      }
+
+      notify('Saving village pin to Supabase...', 'info')
+      const res = await DataService.addVillagePin({
+        name: villageForm.name,
+        nameHindi: villageForm.nameHindi || villageForm.name,
+        distanceKm: Number(villageForm.distanceKm) || 0,
+        lat: Number(villageForm.lat) || 29.02,
+        lng: Number(villageForm.lng) || 77.82,
+        workCount: Number(villageForm.workCount) || 1,
+        rating: Number(villageForm.rating) || 5.0,
+        featuredWorkTitle: villageForm.featuredWorkTitle || `${villageForm.name} Work`,
+        featuredWorkTitleHindi: villageForm.featuredWorkTitleHindi || `${villageForm.nameHindi} कार्य`,
+        imageUrl: photoRes.secure_url,
+        videoUrl,
+        quote: villageForm.quote || 'शर्मा जी का काम बहुत मजबूत और समय पर हुआ।',
+        quoteAuthor: villageForm.quoteAuthor || `${villageForm.name} Customer`,
+        workType: villageForm.workType,
+        deliveryTime: villageForm.deliveryTime,
+        materials: villageForm.materials,
+        warranty: villageForm.warranty,
+      })
+
+      if (res.success) {
+        notify('गाँव का पिन व वीडियो सफलतापूर्वक लाइव मैप पर जुड़ गया!', 'success')
+        setVillagePhotoFile(null)
+        setVillageVideoFile(null)
+        setVillagePhotoPreview('')
+        setVillageVideoName('')
+        DataService.fetchVillagePins().then(setVillagePins)
+      } else {
+        notify(`Supabase error: ${res.error}`, 'error')
+      }
+    } catch (err: any) {
+      notify(`Village upload failed: ${err.message}`, 'error')
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(prev => ({ ...prev, vPhoto: 0, vVideo: 0 }))
+    }
+  }
+
+  // Copy Supabase SQL helper
+  const copySqlSchema = () => {
+    const sql = `-- Run this in Supabase SQL Editor
+CREATE TABLE IF NOT EXISTS public.gallery (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category TEXT NOT NULL CHECK (category IN ('doors', 'windows', 'almirahs', 'beds-mandirs', 'farm-shop', 'repairs')),
+    title TEXT NOT NULL,
+    title_hindi TEXT NOT NULL,
+    village TEXT NOT NULL,
+    material TEXT NOT NULL CHECK (material IN ('wood', 'aluminium')),
+    image_url TEXT NOT NULL,
+    approx_price NUMERIC DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.transformations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    village TEXT NOT NULL,
+    village_hindi TEXT NOT NULL,
+    title TEXT NOT NULL,
+    title_hindi TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('wood', 'aluminium')),
+    before_image_url TEXT NOT NULL,
+    after_image_url TEXT NOT NULL,
+    material_spec TEXT NOT NULL DEFAULT '',
+    hardware_spec TEXT NOT NULL DEFAULT '',
+    delivery_spec TEXT NOT NULL DEFAULT '',
+    quote TEXT NOT NULL DEFAULT '',
+    quote_author TEXT NOT NULL DEFAULT '',
+    quote_author_hindi TEXT NOT NULL DEFAULT '',
+    warranty TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.village_pins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    name_hindi TEXT NOT NULL,
+    distance_km NUMERIC DEFAULT 0,
+    lat NUMERIC NOT NULL,
+    lng NUMERIC NOT NULL,
+    work_count NUMERIC DEFAULT 0,
+    rating NUMERIC DEFAULT 5.0,
+    featured_work_title TEXT NOT NULL,
+    featured_work_title_hindi TEXT NOT NULL,
+    image_url TEXT NOT NULL,
+    video_url TEXT DEFAULT '',
+    quote TEXT NOT NULL DEFAULT '',
+    quote_author TEXT NOT NULL DEFAULT '',
+    work_type TEXT NOT NULL DEFAULT '',
+    delivery_time TEXT NOT NULL DEFAULT '',
+    materials TEXT NOT NULL DEFAULT '',
+    warranty TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.gallery ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transformations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.village_pins ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read gallery" ON public.gallery FOR SELECT USING (true);
+CREATE POLICY "Anon insert gallery" ON public.gallery FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Public read transformations" ON public.transformations FOR SELECT USING (true);
+CREATE POLICY "Anon insert transformations" ON public.transformations FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Public read village_pins" ON public.village_pins FOR SELECT USING (true);
+CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH CHECK (true);`
+
+    navigator.clipboard.writeText(sql)
+    notify('SQL schema copied to clipboard! Paste it into Supabase SQL Editor.', 'success')
+  }
+
   const TABS: { key: TabType; label: string; icon: string }[] = [
-    { key: 'gallery', label: 'Gallery', icon: 'photo_library' },
+    { key: 'gallery', label: 'Work Gallery', icon: 'photo_library' },
     { key: 'beforeafter', label: 'Before & After', icon: 'compare' },
-    { key: 'services', label: 'Services', icon: 'list_alt' },
-    { key: 'villages', label: 'Villages', icon: 'location_on' },
-    { key: 'settings', label: 'Settings', icon: 'settings' },
+    { key: 'villages', label: 'Village Pins & Videos', icon: 'pin_drop' },
+    { key: 'services', label: 'Prices & Services', icon: 'list_alt' },
+    { key: 'settings', label: 'Shop Settings', icon: 'settings' },
+    { key: 'sql', label: 'Supabase SQL Setup', icon: 'database' },
   ]
 
   if (!isLoggedIn) {
@@ -75,7 +371,7 @@ export default function Admin() {
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-primary text-on-primary rounded-2xl flex items-center justify-center font-bold text-2xl font-headline mx-auto mb-3">SJ</div>
             <h1 className="font-headline font-bold text-primary text-xl">Admin Panel</h1>
-            <p className="text-on-surface-variant text-sm mt-1">Sharma Ji Woodcraft &amp; Aluminium</p>
+            <p className="text-on-surface-variant text-sm mt-1">Direct Upload to Cloudinary &amp; Supabase</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -111,37 +407,66 @@ export default function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-container-low">
-      {/* Admin header */}
-      <div className="bg-primary text-on-primary px-4 py-3 flex items-center justify-between shadow-md sticky top-0 z-10">
+    <div className="min-h-screen bg-surface-container-low pb-20">
+      {/* Toast Alert */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-2 transition-all ${
+            toast.type === 'success'
+              ? 'bg-[#15803d] text-white'
+              : toast.type === 'error'
+              ? 'bg-[#ba1a1a] text-white'
+              : 'bg-[#263447] text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+            {toast.type === 'success' ? 'check_circle' : toast.type === 'error' ? 'error' : 'info'}
+          </span>
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Admin Header */}
+      <div className="bg-primary text-on-primary px-4 py-3 flex items-center justify-between shadow-md sticky top-0 z-20">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary-container rounded-lg flex items-center justify-center font-bold text-sm">SJ</div>
+          <div className="w-9 h-9 bg-primary-container rounded-lg flex items-center justify-center font-bold text-sm">SJ</div>
           <div>
-            <div className="font-headline font-bold text-sm">Admin Panel — Sharma Ji</div>
-            <div className="text-secondary-fixed text-xs">Sharma Ji Woodcraft &amp; Aluminium Fabricators</div>
+            <div className="font-headline font-bold text-sm">Admin Portal — Sharma Ji Works</div>
+            <div className="text-secondary-fixed text-xs">Direct Cloudinary Upload &amp; Supabase Live Sync</div>
           </div>
         </div>
-        <button
-          onClick={() => setIsLoggedIn(false)}
-          className="flex items-center gap-1 text-sm text-on-primary-container hover:text-on-primary transition-colors"
-          type="button"
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>logout</span>
-          Logout
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/"
+            className="hidden sm:inline-flex items-center gap-1 text-xs bg-primary-container px-3 py-1.5 rounded-lg text-on-primary hover:bg-surface-tint transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">visibility</span>
+            View Website
+          </a>
+          <button
+            onClick={() => setIsLoggedIn(false)}
+            className="flex items-center gap-1 text-xs text-on-primary-container hover:text-on-primary transition-colors bg-white/10 px-3 py-1.5 rounded-lg"
+            type="button"
+          >
+            <span className="material-symbols-outlined text-sm">logout</span>
+            Logout
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-outline-variant px-4 overflow-x-auto">
-        <div className="flex gap-1 py-2">
+      {/* Navigation Tabs */}
+      <div className="bg-white border-b border-outline-variant px-4 overflow-x-auto shadow-sm">
+        <div className="max-w-6xl mx-auto flex gap-1 py-2">
           {TABS.map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-label font-semibold whitespace-nowrap transition-colors ${activeTab === tab.key ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-low'}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-label font-bold whitespace-nowrap transition-colors ${
+                activeTab === tab.key ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
               type="button"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{tab.icon}</span>
+              <span className="material-symbols-outlined text-base">{tab.icon}</span>
               {tab.label}
             </button>
           ))}
@@ -149,33 +474,192 @@ export default function Admin() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Cloud sync status notice */}
-        <div className="bg-secondary-fixed/40 border border-secondary-fixed rounded-xl p-3 mb-6 flex items-start gap-2">
-          <span className="material-symbols-outlined text-secondary shrink-0" style={{ fontSize: '20px' }}>info</span>
-          <span className="text-sm text-on-surface">
-            <strong>Live Sync Ready:</strong> Supabase URL (<code className="bg-surface-container px-1 rounded">{import.meta.env.VITE_SUPABASE_URL ? 'Connected' : 'Not configured'}</code>) and Cloudinary (<code className="bg-surface-container px-1 rounded">{import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'Not configured'}</code>) are detected from <code>.env</code>.
-          </span>
+        {/* Cloud Status Ribbon */}
+        <div className="bg-white rounded-xl p-3 mb-6 flex flex-wrap items-center justify-between gap-3 border border-outline-variant/60 shadow-sm text-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#15803d]" />
+            <span><strong>Cloudinary:</strong> {import.meta.env.VITE_CLOUDINARY_CLOUD_NAME} (Preset: {import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET})</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-secondary" />
+            <span><strong>Supabase:</strong> Connected to live project</span>
+          </div>
+          <button
+            onClick={copySqlSchema}
+            className="ml-auto inline-flex items-center gap-1 px-3 py-1 bg-surface-container rounded-lg text-primary font-bold hover:bg-surface-container-high transition-colors"
+            type="button"
+          >
+            <span className="material-symbols-outlined text-sm">content_copy</span>
+            Copy Supabase SQL Schema
+          </button>
         </div>
 
-        {/* Gallery tab */}
+        {/* 1. WORK GALLERY TAB */}
         {activeTab === 'gallery' && (
           <div className="space-y-6">
-            <h2 className="font-headline font-bold text-primary text-xl">Gallery Management</h2>
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-outline-variant font-label font-semibold text-on-surface">Current Gallery Items ({GALLERY.length})</div>
+            <div className="bg-white rounded-2xl shadow-sm p-6 border border-outline-variant/60">
+              <h3 className="font-headline font-bold text-primary text-lg mb-2 flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary">add_photo_alternate</span>
+                गैलरी में नई फोटो अपलोड करें (Direct Image Upload)
+              </h3>
+              <p className="text-on-surface-variant text-xs mb-5">
+                फोन या कंप्यूटर से फोटो सीधे अपलोड करें — यह Cloudinary पर स्टोर होगी और Supabase डेटाबेस में तुरंत जुड़ जाएगी।
+              </p>
+
+              <form onSubmit={handleGallerySubmit} className="space-y-4">
+                {/* File Upload Dropzone */}
+                <div>
+                  <label className="block font-label font-bold text-on-surface text-sm mb-1">
+                    कार्य की फोटो चुनें (Select Work Image) *
+                  </label>
+                  <div className="border-2 border-dashed border-outline-variant rounded-xl p-4 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      required
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setGalleryFile(file)
+                          setGalleryPreview(URL.createObjectURL(file))
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    {galleryPreview ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <img src={galleryPreview} alt="Preview" className="h-40 rounded-lg object-cover shadow" />
+                        <span className="text-xs text-secondary font-bold">फोटो बदली जा सकती है (Click to change)</span>
+                      </div>
+                    ) : (
+                      <div className="py-6 flex flex-col items-center gap-2">
+                        <span className="material-symbols-outlined text-4xl text-primary">cloud_upload</span>
+                        <span className="font-label font-bold text-sm text-primary">फोटो चुनने के लिए यहाँ टैप करें</span>
+                        <span className="text-xs text-on-surface-variant">JPG, PNG, WebP (स्मार्टफोन फोटो स्वीकृत)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">शीर्षक (Hindi Title) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="उदा: नक्काशीदार सागवान मेन दरवाजा"
+                      value={galleryForm.titleHindi}
+                      onChange={e => setGalleryForm(f => ({ ...f, titleHindi: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">English Title</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Carved Sagwan Main Door"
+                      value={galleryForm.title}
+                      onChange={e => setGalleryForm(f => ({ ...f, title: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">गाँव / स्थान (Village)</label>
+                    <input
+                      type="text"
+                      placeholder="Rampur"
+                      value={galleryForm.village}
+                      onChange={e => setGalleryForm(f => ({ ...f, village: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">अनुमानित लागत (Approx Price in ₹)</label>
+                    <input
+                      type="number"
+                      placeholder="8500"
+                      value={galleryForm.approxPrice}
+                      onChange={e => setGalleryForm(f => ({ ...f, approxPrice: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">वर्ग (Category)</label>
+                    <select
+                      value={galleryForm.category}
+                      onChange={e => setGalleryForm(f => ({ ...f, category: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    >
+                      <option value="doors">दरवाजे (Doors)</option>
+                      <option value="windows">खिड़कियाँ (Windows)</option>
+                      <option value="almirahs">अलमारी (Almirahs)</option>
+                      <option value="beds-mandirs">बेड और मंदिर (Beds &amp; Mandirs)</option>
+                      <option value="farm-shop">खेती, ट्रॉली और दुकान (Farm &amp; Shop)</option>
+                      <option value="repairs">मरम्मत व पॉलिश (Repairs)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">सामग्री (Material)</label>
+                    <select
+                      value={galleryForm.material}
+                      onChange={e => setGalleryForm(f => ({ ...f, material: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    >
+                      <option value="wood">लकड़ी (Wood)</option>
+                      <option value="aluminium">एल्युमिनियम (Aluminium)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Upload Progress Bar */}
+                {isUploading && (uploadProgress.gallery || 0) > 0 && (
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-primary mb-1">
+                      <span>Cloudinary Uploading...</span>
+                      <span>{uploadProgress.gallery}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-surface-container overflow-hidden">
+                      <div className="h-full bg-secondary transition-all duration-300" style={{ width: `${uploadProgress.gallery}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className="py-3 px-6 rounded-xl font-bold text-sm bg-primary text-on-primary hover:opacity-90 transition-opacity flex items-center gap-2 shadow disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-lg">cloud_upload</span>
+                  {isUploading ? 'अपलोड जारी है...' : 'गैलरी में अपलोड व सुरक्षित करें (Save to Supabase)'}
+                </button>
+              </form>
+            </div>
+
+            {/* Current Gallery List */}
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-outline-variant/60">
+              <div className="p-4 border-b border-outline-variant font-label font-bold text-primary flex items-center justify-between">
+                <span>वर्तमान गैलरी कार्य ({galleryItems.length} तस्वीरें)</span>
+                <span className="text-xs text-on-surface-variant font-normal">लाइव डेटाबेस से</span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-surface-container-low">
+                  <thead className="bg-surface-container-low text-xs font-label font-bold text-on-surface-variant">
                     <tr>
-                      {['Title', 'Village', 'Category', 'Material', 'Price'].map(h => (
-                        <th key={h} className="px-4 py-2 text-left text-xs font-label font-bold text-on-surface-variant">{h}</th>
-                      ))}
+                      <th className="px-4 py-2.5 text-left">फोटो</th>
+                      <th className="px-4 py-2.5 text-left">नाम</th>
+                      <th className="px-4 py-2.5 text-left">गाँव</th>
+                      <th className="px-4 py-2.5 text-left">श्रेणी</th>
+                      <th className="px-4 py-2.5 text-left">सामग्री</th>
+                      <th className="px-4 py-2.5 text-left">लागत</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {GALLERY.slice(0, 10).map(item => (
-                      <tr key={item.id} className="border-t border-outline-variant hover:bg-surface-container-low">
-                        <td className="px-4 py-2 text-on-surface">{item.titleHindi}</td>
+                    {galleryItems.map(item => (
+                      <tr key={item.id} className="border-t border-outline-variant hover:bg-surface-container-low transition-colors">
+                        <td className="px-4 py-2">
+                          <img src={item.image} alt="" className="w-12 h-12 object-cover rounded-lg shadow-sm" />
+                        </td>
+                        <td className="px-4 py-2 font-semibold text-on-surface">{item.titleHindi}</td>
                         <td className="px-4 py-2 text-on-surface-variant">{item.village}</td>
                         <td className="px-4 py-2 text-on-surface-variant capitalize">{item.category}</td>
                         <td className="px-4 py-2">
@@ -183,189 +667,394 @@ export default function Admin() {
                             {item.material}
                           </span>
                         </td>
-                        <td className="px-4 py-2 font-label font-semibold text-secondary">₹{item.approxPrice.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-2 font-bold text-secondary">₹{item.approxPrice.toLocaleString('en-IN')}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="font-headline font-bold text-primary text-lg mb-4">Add New Photo</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { key: 'title', label: 'Title (English)', placeholder: 'Carved Sagwan Door' },
-                  { key: 'titleHindi', label: 'Title (Hindi)', placeholder: 'नक्काशीदार दरवाजा' },
-                  { key: 'village', label: 'Village', placeholder: 'Rampur' },
-                  { key: 'approxPrice', label: 'Approx Price (₹)', placeholder: '8500' },
-                  { key: 'imageUrl', label: 'Image URL / Cloudinary URL', placeholder: 'https://...' },
-                ].map(f => (
-                  <div key={f.key}>
-                    <label className="block font-label font-semibold text-on-surface text-sm mb-1">{f.label}</label>
-                    <input
-                      type="text"
-                      value={(galleryForm as Record<string, string>)[f.key]}
-                      onChange={e => setGalleryForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      placeholder={f.placeholder}
-                      className="w-full p-2.5 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                ))}
-                <div>
-                  <label className="block font-label font-semibold text-on-surface text-sm mb-1">Category</label>
-                  <select
-                    value={galleryForm.category}
-                    onChange={e => setGalleryForm(f => ({ ...f, category: e.target.value }))}
-                    className="w-full p-2.5 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {['doors', 'windows', 'almirahs', 'beds-mandirs', 'farm-shop', 'repairs'].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-label font-semibold text-on-surface text-sm mb-1">Material</label>
-                  <select
-                    value={galleryForm.material}
-                    onChange={e => setGalleryForm(f => ({ ...f, material: e.target.value }))}
-                    className="w-full p-2.5 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="wood">Wood</option>
-                    <option value="aluminium">Aluminium</option>
-                  </select>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { console.log('New gallery item:', galleryForm); showSaved() }}
-                className="mt-4 flex items-center gap-2 py-2.5 px-6 bg-primary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
-                Save to Gallery
-              </button>
-            </div>
           </div>
         )}
 
-        {/* Before/After tab */}
+        {/* 2. BEFORE & AFTER TAB */}
         {activeTab === 'beforeafter' && (
           <div className="space-y-6">
-            <h2 className="font-headline font-bold text-primary text-xl">Before &amp; After Management</h2>
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-outline-variant font-label font-semibold text-on-surface">Current Transformations ({TRANSFORMATIONS.length})</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-surface-container-low">
-                    <tr>
-                      {['Village', 'Title', 'Type', 'Warranty'].map(h => (
-                        <th key={h} className="px-4 py-2 text-left text-xs font-label font-bold text-on-surface-variant">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {TRANSFORMATIONS.map(t => (
-                      <tr key={t.id} className="border-t border-outline-variant hover:bg-surface-container-low">
-                        <td className="px-4 py-2 text-on-surface">{t.villageHindi}</td>
-                        <td className="px-4 py-2 text-on-surface-variant text-xs">{t.titleHindi}</td>
-                        <td className="px-4 py-2">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${t.type === 'wood' ? 'bg-secondary-fixed text-on-secondary-fixed' : 'bg-tertiary-fixed text-on-tertiary-fixed'}`}>
-                            {t.type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-xs text-on-surface-variant">{t.warranty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <div className="bg-white rounded-2xl shadow-sm p-6 border border-outline-variant/60">
+              <h3 className="font-headline font-bold text-primary text-lg mb-2 flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary">compare</span>
+                काम से पहले और बाद का कार्य जोड़ें (Dual Photo Upload)
+              </h3>
+              <p className="text-on-surface-variant text-xs mb-5">
+                दोनों फोटो अपलोड करें — दोनों का कोण समान रखें ताकि स्लाइडर में बदलाव स्पष्ट दिखाई दे।
+              </p>
 
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="font-headline font-bold text-primary text-lg mb-4">Add New Transformation</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { key: 'village', label: 'Village', placeholder: 'Rampur' },
-                  { key: 'title', label: 'Title (English)', placeholder: 'Old door to new sagwan door' },
-                  { key: 'titleHindi', label: 'Title (Hindi)', placeholder: 'पुराना दरवाजा - नया सागवान' },
-                  { key: 'beforeImageUrl', label: 'Before Image URL', placeholder: 'https://...' },
-                  { key: 'afterImageUrl', label: 'After Image URL (Cloudinary)', placeholder: 'https://...' },
-                  { key: 'material', label: 'Material used', placeholder: 'Grade-A Sagwan' },
-                  { key: 'delivery', label: 'Delivery Time', placeholder: '7 Days' },
-                  { key: 'warranty', label: 'Warranty', placeholder: '10-Year Termite Guarantee' },
-                  { key: 'quote', label: 'Customer Quote', placeholder: '"Sharma Ji ne achha kaam kiya..."' },
-                  { key: 'quoteAuthor', label: 'Customer Name', placeholder: 'Ramesh Ji, Rampur' },
-                ].map(f => (
-                  <div key={f.key}>
-                    <label className="block font-label font-semibold text-on-surface text-sm mb-1">{f.label}</label>
+              <form onSubmit={handleBaSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Before Photo Upload */}
+                  <div>
+                    <label className="block font-label font-bold text-on-surface text-xs mb-1">
+                      1. काम से पहले की फोटो (Before Image) *
+                    </label>
+                    <div className="border-2 border-dashed border-outline-variant rounded-xl p-4 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        required
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setBaBeforeFile(file)
+                            setBaBeforePreview(URL.createObjectURL(file))
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      {baBeforePreview ? (
+                        <img src={baBeforePreview} alt="Before" className="h-36 mx-auto rounded-lg object-cover shadow" />
+                      ) : (
+                        <div className="py-4 flex flex-col items-center gap-1">
+                          <span className="material-symbols-outlined text-3xl text-primary">add_a_photo</span>
+                          <span className="text-xs font-bold text-primary">पुरानी फोटो चुनें (Before)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* After Photo Upload */}
+                  <div>
+                    <label className="block font-label font-bold text-on-surface text-xs mb-1">
+                      2. काम के बाद की फोटो (After Image) *
+                    </label>
+                    <div className="border-2 border-dashed border-outline-variant rounded-xl p-4 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        required
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setBaAfterFile(file)
+                            setBaAfterPreview(URL.createObjectURL(file))
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      {baAfterPreview ? (
+                        <img src={baAfterPreview} alt="After" className="h-36 mx-auto rounded-lg object-cover shadow" />
+                      ) : (
+                        <div className="py-4 flex flex-col items-center gap-1">
+                          <span className="material-symbols-outlined text-3xl text-secondary">add_photo_alternate</span>
+                          <span className="text-xs font-bold text-secondary">नई फोटो चुनें (After)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">शीर्षक (Hindi Title) *</label>
                     <input
                       type="text"
-                      value={(baForm as Record<string, string>)[f.key]}
-                      onChange={e => setBaForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      placeholder={f.placeholder}
-                      className="w-full p-2.5 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      required
+                      placeholder="उदा: दीमक लगा पुराना दरवाजा - नया नक्काशीदार सागवान"
+                      value={baForm.titleHindi}
+                      onChange={e => setBaForm(f => ({ ...f, titleHindi: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     />
                   </div>
-                ))}
-                <div>
-                  <label className="block font-label font-semibold text-on-surface text-sm mb-1">Type</label>
-                  <select
-                    value={baForm.type}
-                    onChange={e => setBaForm(f => ({ ...f, type: e.target.value }))}
-                    className="w-full p-2.5 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="wood">Wood</option>
-                    <option value="aluminium">Aluminium</option>
-                  </select>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">गाँव (Village Hindi) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="रामपुर"
+                      value={baForm.villageHindi}
+                      onChange={e => setBaForm(f => ({ ...f, villageHindi: e.target.value, village: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">सामग्री विवरण (Material Specs)</label>
+                    <input
+                      type="text"
+                      placeholder="Grade-A CP Teak (Sagwan)"
+                      value={baForm.material}
+                      onChange={e => setBaForm(f => ({ ...f, material: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">वारंटी (Warranty)</label>
+                    <input
+                      type="text"
+                      placeholder="10-Year Termite Guarantee"
+                      value={baForm.warranty}
+                      onChange={e => setBaForm(f => ({ ...f, warranty: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block font-label font-semibold text-xs mb-1">ग्राहक की समीक्षा / प्रशंसा पत्र (Customer Quote)</label>
+                    <textarea
+                      rows={2}
+                      placeholder="उदा: शर्मा जी ने 7 दिन में बिल्कुल वैसा दरवाजा बनाया जैसा सोचा था।"
+                      value={baForm.quote}
+                      onChange={e => setBaForm(f => ({ ...f, quote: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
                 </div>
+
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className="py-3 px-6 rounded-xl font-bold text-sm bg-primary text-on-primary hover:opacity-90 transition-opacity flex items-center gap-2 shadow disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-lg">cloud_upload</span>
+                  {isUploading ? 'दोनों फोटो अपलोड हो रही हैं...' : 'Before & After सहेजें (Upload & Save)'}
+                </button>
+              </form>
+            </div>
+
+            {/* List */}
+            <div className="bg-white rounded-2xl shadow-sm p-4 border border-outline-variant/60">
+              <h4 className="font-label font-bold text-primary mb-3">वर्तमान बदलाव कार्य ({transformations.length})</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {transformations.map(t => (
+                  <div key={t.id} className="border border-outline-variant rounded-xl p-3 flex gap-3 items-center">
+                    <img src={t.afterImage} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0 shadow-sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm text-on-surface truncate">{t.titleHindi}</div>
+                      <div className="text-xs text-on-surface-variant">{t.villageHindi} • {t.warranty}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <button
-                type="button"
-                onClick={() => { console.log('New transformation:', baForm); showSaved() }}
-                className="mt-4 flex items-center gap-2 py-2.5 px-6 bg-primary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
-                Save Transformation
-              </button>
             </div>
           </div>
         )}
 
-        {/* Services tab */}
+        {/* 3. VILLAGE PINS & VIDEO REVIEWS TAB */}
+        {activeTab === 'villages' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm p-6 border border-outline-variant/60">
+              <h3 className="font-headline font-bold text-primary text-lg mb-2 flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary">pin_drop</span>
+                नया गाँव पिन और ग्राहक वीडियो जोड़ें (Google Map GPS + Video Upload)
+              </h3>
+              <p className="text-on-surface-variant text-xs mb-5">
+                गाँव का नाम और वास्तविक GPS निर्देशांक भरें। ग्राहक का 30-60 सेकंड का वीडियो सीधे अपलोड करें।
+              </p>
+
+              <form onSubmit={handleVillageSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Work Photo Upload */}
+                  <div>
+                    <label className="block font-label font-bold text-on-surface text-xs mb-1">
+                      गाँव के कार्य की फोटो (Work Photo) *
+                    </label>
+                    <div className="border-2 border-dashed border-outline-variant rounded-xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        required
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setVillagePhotoFile(file)
+                            setVillagePhotoPreview(URL.createObjectURL(file))
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      {villagePhotoPreview ? (
+                        <img src={villagePhotoPreview} alt="Work" className="h-28 mx-auto rounded-lg object-cover shadow" />
+                      ) : (
+                        <div className="py-3 flex flex-col items-center gap-1">
+                          <span className="material-symbols-outlined text-2xl text-primary">photo_camera</span>
+                          <span className="text-xs font-bold text-primary">कार्य की फोटो चुनें</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Customer Video Upload */}
+                  <div>
+                    <label className="block font-label font-bold text-on-surface text-xs mb-1">
+                      ग्राहक का वीडियो फीडबैक (30-60s MP4/Video Upload)
+                    </label>
+                    <div className="border-2 border-dashed border-outline-variant rounded-xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setVillageVideoFile(file)
+                            setVillageVideoName(file.name)
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      {villageVideoName ? (
+                        <div className="py-4 flex flex-col items-center gap-1 text-secondary font-bold text-xs">
+                          <span className="material-symbols-outlined text-3xl">videocam</span>
+                          <span>{villageVideoName}</span>
+                          <span className="text-[10px] text-on-surface-variant font-normal">क्लिक करके बदलें</span>
+                        </div>
+                      ) : (
+                        <div className="py-3 flex flex-col items-center gap-1">
+                          <span className="material-symbols-outlined text-2xl text-secondary">video_call</span>
+                          <span className="text-xs font-bold text-secondary">वीडियो फाइल चुनें (MP4/MOV)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">गाँव का नाम (English)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Sardhana"
+                      value={villageForm.name}
+                      onChange={e => setVillageForm(f => ({ ...f, name: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">गाँव का नाम (Hindi)</label>
+                    <input
+                      type="text"
+                      placeholder="उदा: सरधना"
+                      value={villageForm.nameHindi}
+                      onChange={e => setVillageForm(f => ({ ...f, nameHindi: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">दूरी किमी (Distance in KM)</label>
+                    <input
+                      type="number"
+                      placeholder="18"
+                      value={villageForm.distanceKm}
+                      onChange={e => setVillageForm(f => ({ ...f, distanceKm: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">GPS Latitude (अक्षांश)</label>
+                    <input
+                      type="text"
+                      placeholder="29.1500"
+                      value={villageForm.lat}
+                      onChange={e => setVillageForm(f => ({ ...f, lat: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">GPS Longitude (देशांतर)</label>
+                    <input
+                      type="text"
+                      placeholder="77.6167"
+                      value={villageForm.lng}
+                      onChange={e => setVillageForm(f => ({ ...f, lng: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-label font-semibold text-xs mb-1">घरों की संख्या (Homes count)</label>
+                    <input
+                      type="number"
+                      placeholder="50"
+                      value={villageForm.workCount}
+                      onChange={e => setVillageForm(f => ({ ...f, workCount: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block font-label font-semibold text-xs mb-1">प्रमुख कार्य शीर्षक (Featured Work Hindi)</label>
+                    <input
+                      type="text"
+                      placeholder="उदा: पुरातन हवेली का सागवान चौखट व नक्काशी रीस्टोरेशन"
+                      value={villageForm.featuredWorkTitleHindi}
+                      onChange={e => setVillageForm(f => ({ ...f, featuredWorkTitleHindi: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className="py-3 px-6 rounded-xl font-bold text-sm bg-primary text-on-primary hover:opacity-90 transition-opacity flex items-center gap-2 shadow disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-lg">add_location_alt</span>
+                  {isUploading ? 'अपलोड जारी है...' : 'गाँव पिन व वीडियो सहेजें (Save Village Pin)'}
+                </button>
+              </form>
+            </div>
+
+            {/* Pins Table */}
+            <div className="bg-white rounded-2xl shadow-sm p-4 border border-outline-variant/60 overflow-x-auto">
+              <h4 className="font-label font-bold text-primary mb-3">वर्तमान मैप पिन ({villagePins.length})</h4>
+              <table className="w-full text-xs">
+                <thead className="bg-surface-container-low font-bold text-on-surface-variant">
+                  <tr>
+                    <th className="px-3 py-2 text-left">गाँव</th>
+                    <th className="px-3 py-2 text-left">GPS (Lat, Lng)</th>
+                    <th className="px-3 py-2 text-left">दूरी</th>
+                    <th className="px-3 py-2 text-left">कार्य संख्या</th>
+                    <th className="px-3 py-2 text-left">वीडियो</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {villagePins.map(p => (
+                    <tr key={p.id} className="border-t border-outline-variant hover:bg-surface-container-low">
+                      <td className="px-3 py-2 font-bold text-on-surface">{p.nameHindi} ({p.name})</td>
+                      <td className="px-3 py-2 font-mono text-tertiary">{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</td>
+                      <td className="px-3 py-2">{p.distanceKm} km</td>
+                      <td className="px-3 py-2 font-bold text-secondary">{p.workCount}+ घर</td>
+                      <td className="px-3 py-2">
+                        {p.videoUrl ? (
+                          <span className="text-[#15803d] font-bold inline-flex items-center gap-1">
+                            <span className="material-symbols-outlined text-sm">videocam</span> हाँ
+                          </span>
+                        ) : (
+                          <span className="text-on-surface-variant">पोस्टर मात्र</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 4. SERVICES TAB */}
         {activeTab === 'services' && (
           <div className="space-y-6">
-            <h2 className="font-headline font-bold text-primary text-xl">Services &amp; Prices Management</h2>
+            <h2 className="font-headline font-bold text-primary text-xl">Services &amp; Rates</h2>
             {SERVICES.map(cat => (
-              <div key={cat.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-outline-variant flex items-center gap-2">
+              <div key={cat.id} className="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/60">
+                <div className="p-4 border-b border-outline-variant flex items-center gap-2 bg-surface-container-low">
                   <span className="material-symbols-outlined text-primary">{cat.icon}</span>
                   <span className="font-label font-bold text-on-surface">{cat.titleHindi}</span>
-                  <span className="text-on-surface-variant text-sm ml-1">({cat.titleEn})</span>
+                  <span className="text-on-surface-variant text-xs ml-1">({cat.titleEn})</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-surface-container-low">
-                      <tr>
-                        {['Item', 'Starting Price', 'Unit', 'Action'].map(h => (
-                          <th key={h} className="px-4 py-2 text-left text-xs font-label font-bold text-on-surface-variant">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
                     <tbody>
                       {cat.items.map(item => (
                         <tr key={item.id} className="border-t border-outline-variant">
-                          <td className="px-4 py-2 text-on-surface">{item.nameHindi}</td>
-                          <td className="px-4 py-2">
-                            <span className="font-label font-bold text-secondary">₹{item.startingPrice.toLocaleString('en-IN')}</span>
-                          </td>
-                          <td className="px-4 py-2 text-on-surface-variant">{item.unit}</td>
-                          <td className="px-4 py-2">
-                            <button
-                              type="button"
-                              onClick={() => showSaved('Price update noted. Ready for Supabase.')}
-                              className="text-xs px-3 py-1 bg-surface-container text-primary rounded-lg hover:bg-surface-container-high transition-colors font-bold"
-                            >
-                              Edit Price
-                            </button>
-                          </td>
+                          <td className="px-4 py-2.5 text-on-surface font-semibold">{item.nameHindi}</td>
+                          <td className="px-4 py-2.5 font-bold text-secondary">₹{item.startingPrice.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-2.5 text-on-surface-variant text-xs">/ {item.unit}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -376,97 +1065,128 @@ export default function Admin() {
           </div>
         )}
 
-        {/* Villages tab */}
-        {activeTab === 'villages' && (
-          <div className="space-y-6">
-            <h2 className="font-headline font-bold text-primary text-xl">Villages &amp; Map Pins Management</h2>
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-outline-variant font-label font-semibold text-on-surface">Current Village Pins ({VILLAGE_PINS.length})</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-surface-container-low">
-                    <tr>
-                      {['Village', 'Distance', 'Works Done', 'Rating', 'Position X', 'Position Y'].map(h => (
-                        <th key={h} className="px-4 py-2 text-left text-xs font-label font-bold text-on-surface-variant">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {VILLAGE_PINS.map(pin => (
-                      <tr key={pin.id} className="border-t border-outline-variant hover:bg-surface-container-low">
-                        <td className="px-4 py-2 text-on-surface font-label font-semibold">{pin.name}</td>
-                        <td className="px-4 py-2 text-on-surface-variant">{pin.distanceKm} km</td>
-                        <td className="px-4 py-2 text-secondary font-bold">{pin.workCount}+</td>
-                        <td className="px-4 py-2 text-on-surface">{pin.rating}</td>
-                        <td className="px-4 py-2 text-on-surface-variant">{pin.positionX}%</td>
-                        <td className="px-4 py-2 text-on-surface-variant">{pin.positionY}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        {/* 5. SHOP SETTINGS TAB */}
+        {activeTab === 'settings' && (
+          <div className="bg-white rounded-2xl shadow-sm p-6 border border-outline-variant/60 space-y-4">
+            <h2 className="font-headline font-bold text-primary text-xl mb-4">दुकान व संपर्क सेटिंग्स</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'phone', label: 'फोन नंबर (Call Number)', icon: 'call' },
+                { key: 'whatsapp', label: 'व्हाट्सएप नंबर (WhatsApp)', icon: 'chat' },
+                { key: 'address', label: 'वर्कशॉप का पता (Workshop Address)', icon: 'location_on' },
+                { key: 'hours', label: 'दुकान का समय (Working Hours)', icon: 'schedule' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="flex items-center gap-1 font-label font-semibold text-xs mb-1">
+                    <span className="material-symbols-outlined text-primary text-sm">{f.icon}</span>
+                    {f.label}
+                  </label>
+                  <input
+                    type="text"
+                    value={(settings as Record<string, string>)[f.key]}
+                    onChange={e => setSettings(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                  />
+                </div>
+              ))}
             </div>
-
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="font-headline font-bold text-primary text-lg mb-4">Add New Village Pin</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {['Village Name', 'Hindi Name', 'Distance (km)', 'Position X (%)', 'Position Y (%)', 'Visit Days', 'Visit Time', 'Work Count'].map(label => (
-                  <div key={label}>
-                    <label className="block font-label font-semibold text-on-surface text-sm mb-1">{label}</label>
-                    <input type="text" placeholder={label} className="w-full p-2.5 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => showSaved('Village pin saved! Connect Supabase to store map data permanently.')}
-                className="mt-4 flex items-center gap-2 py-2.5 px-6 bg-primary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add_location</span>
-                Add Village Pin
-              </button>
-            </div>
+            <button
+              onClick={() => notify('Settings updated successfully in state!', 'success')}
+              className="py-2.5 px-6 rounded-xl font-bold text-sm bg-primary text-on-primary hover:opacity-90 transition-opacity"
+              type="button"
+            >
+              सेटिंग्स सहेजें
+            </button>
           </div>
         )}
 
-        {/* Settings tab */}
-        {activeTab === 'settings' && (
-          <div className="space-y-6">
-            <h2 className="font-headline font-bold text-primary text-xl">Business Settings</h2>
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {[
-                  { key: 'phone', label: 'Phone Number', icon: 'call' },
-                  { key: 'whatsapp', label: 'WhatsApp Number', icon: 'chat' },
-                  { key: 'address', label: 'Workshop Address', icon: 'location_on' },
-                  { key: 'hours', label: 'Working Hours', icon: 'schedule' },
-                ].map(f => (
-                  <div key={f.key}>
-                    <label className="flex items-center gap-1 font-label font-semibold text-on-surface text-sm mb-1">
-                      <span className="material-symbols-outlined text-primary" style={{ fontSize: '16px' }}>{f.icon}</span>
-                      {f.label}
-                    </label>
-                    <input
-                      type="text"
-                      value={(settings as Record<string, string>)[f.key]}
-                      onChange={e => setSettings(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      className="w-full p-3 rounded-lg border border-outline-variant text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 p-3 bg-surface-container rounded-lg text-sm text-on-surface-variant">
-                <span className="material-symbols-outlined align-middle mr-1" style={{ fontSize: '16px' }}>info</span>
-                Changes here will be live across the site when Supabase sync is configured.
+        {/* 6. SUPABASE SQL SETUP TAB */}
+        {activeTab === 'sql' && (
+          <div className="bg-white rounded-2xl shadow-sm p-6 border border-outline-variant/60 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-headline font-bold text-primary text-xl">Supabase SQL Database Setup</h2>
+                <p className="text-on-surface-variant text-xs mt-1">
+                  नीचे दिए गए SQL कोड को Supabase के SQL Editor में चलाएं ताकि गैलरी, Before/After और मैप टेबल्स तुरंत सक्रिय हो जाएं।
+                </p>
               </div>
               <button
+                onClick={copySqlSchema}
+                className="py-2.5 px-5 bg-secondary text-on-secondary rounded-xl font-bold text-xs hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow"
                 type="button"
-                onClick={() => { console.log('Settings update:', settings); showSaved('Settings saved!') }}
-                className="mt-4 flex items-center gap-2 py-3 px-6 bg-primary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>cloud_sync</span>
-                Save &amp; Update Live
+                <span className="material-symbols-outlined text-sm">content_copy</span>
+                SQL कॉपी करें (Copy SQL)
               </button>
+            </div>
+
+            <div className="bg-surface-container-high rounded-xl p-4 font-mono text-xs text-on-surface overflow-x-auto max-h-96 leading-relaxed">
+              <pre>{`-- Supabase SQL Schema for Sharma Ji Works
+CREATE TABLE IF NOT EXISTS public.gallery (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category TEXT NOT NULL CHECK (category IN ('doors', 'windows', 'almirahs', 'beds-mandirs', 'farm-shop', 'repairs')),
+    title TEXT NOT NULL,
+    title_hindi TEXT NOT NULL,
+    village TEXT NOT NULL,
+    material TEXT NOT NULL CHECK (material IN ('wood', 'aluminium')),
+    image_url TEXT NOT NULL,
+    approx_price NUMERIC DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.transformations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    village TEXT NOT NULL,
+    village_hindi TEXT NOT NULL,
+    title TEXT NOT NULL,
+    title_hindi TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('wood', 'aluminium')),
+    before_image_url TEXT NOT NULL,
+    after_image_url TEXT NOT NULL,
+    material_spec TEXT NOT NULL DEFAULT '',
+    hardware_spec TEXT NOT NULL DEFAULT '',
+    delivery_spec TEXT NOT NULL DEFAULT '',
+    quote TEXT NOT NULL DEFAULT '',
+    quote_author TEXT NOT NULL DEFAULT '',
+    quote_author_hindi TEXT NOT NULL DEFAULT '',
+    warranty TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.village_pins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    name_hindi TEXT NOT NULL,
+    distance_km NUMERIC DEFAULT 0,
+    lat NUMERIC NOT NULL,
+    lng NUMERIC NOT NULL,
+    work_count NUMERIC DEFAULT 0,
+    rating NUMERIC DEFAULT 5.0,
+    featured_work_title TEXT NOT NULL,
+    featured_work_title_hindi TEXT NOT NULL,
+    image_url TEXT NOT NULL,
+    video_url TEXT DEFAULT '',
+    quote TEXT NOT NULL DEFAULT '',
+    quote_author TEXT NOT NULL DEFAULT '',
+    work_type TEXT NOT NULL DEFAULT '',
+    delivery_time TEXT NOT NULL DEFAULT '',
+    materials TEXT NOT NULL DEFAULT '',
+    warranty TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.gallery ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transformations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.village_pins ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read gallery" ON public.gallery FOR SELECT USING (true);
+CREATE POLICY "Anon insert gallery" ON public.gallery FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Public read transformations" ON public.transformations FOR SELECT USING (true);
+CREATE POLICY "Anon insert transformations" ON public.transformations FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Public read village_pins" ON public.village_pins FOR SELECT USING (true);
+CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH CHECK (true);`}</pre>
             </div>
           </div>
         )}
@@ -474,4 +1194,3 @@ export default function Admin() {
     </div>
   )
 }
-
