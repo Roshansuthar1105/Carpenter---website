@@ -1,0 +1,60 @@
+export const BUSINESS = {
+  name: 'Sharma Ji Woodcraft & Aluminium Fabricators',
+  nameHindi: 'शर्मा जी बढ़ई एवं एल्युमिनियम फैब्रिकेटर्स',
+  artisanName: 'Shri Rameshwar Sharma',
+  artisanNameHindi: 'श्री रामेश्वर शर्मा (शर्मा जी)',
+  tagline: '25+ Years Trust & Craftsmanship',
+  taglineHindi: '25+ वर्षों का अटूट भरोसा और बेमिसाल कारीगरी',
+  phone: '+919876543210',
+  phoneFormatted: '98765-43210',
+  whatsappEstimate: 'https://wa.me/919876543210?text=Namaste%20Sharma%20Ji%2C%20mujhe%20apne%20kaam%20ka%20rate%20puchhna%20hai',
+  whatsappMeasurement: 'https://wa.me/919876543210?text=Namaste%20Sharma%20Ji%2C%20ghar%20par%20naap%20ke%20liye%20bulana%20hai',
+  address: 'Main Bilaspur Road, Near Old Grain Market, Rampur',
+  addressHindi: 'मुख्य बिलासपुर रोड, पुराने अनाज मंडी के पास, रामपुर',
+  workshopHours: '8:00 AM - 7:00 PM',
+  established: 1999,
+  stats: {
+    yearsExperience: 25,
+    villagesServed: 15,
+    homesFurnished: 500,
+    warrantyYears: 5,
+  },
+  guarantees: [
+    { icon: 'verified', label: '100% Genuine Teak & Sagwan', labelHindi: 'दीमक मुक्त लकड़ी' },
+    { icon: 'shield', label: 'Jindal Grade-A Aluminium', labelHindi: 'भारी गेज सेक्शन' },
+    { icon: 'straighten', label: 'Free Home Measurement', labelHindi: 'घर आकर नाप मुफ़्त' },
+    { icon: 'handshake', label: '5-Year Repair Warranty', labelHindi: 'कारीगरी की पक्की वारंटी' },
+    { icon: 'cottage', label: '500+ Village Homes Furnished', labelHindi: 'गाँव-गाँव में भरोसा' },
+  ],
+  trustRules: [
+    {
+      number: '01',
+      titleHindi: 'बिचौलिया मुक्त दाम',
+      titleEn: 'No Middlemen',
+      desc: 'कारखाने से सीधे आपके घर तक। बाजार से 15-20% कम कीमत पर असली माल।',
+    },
+    {
+      number: '02',
+      titleHindi: 'घर पर मुफ़्त नाप',
+      titleEn: 'Doorstep Measurement',
+      desc: 'आपको कहीं जाने की जरूरत नहीं। शर्मा जी खुद आपके घर आकर नाप लेते हैं।',
+    },
+    {
+      number: '03',
+      titleHindi: 'पक्के व पारदर्शी दाम',
+      titleEn: 'Fixed Transparent Rates',
+      desc: 'एक बार तय हुआ तो बीच में कोई एक्स्ट्रा चार्ज नहीं। लिखित कोटेशन मिलता है।',
+    },
+    {
+      number: '04',
+      titleHindi: 'पीढ़ियों का संबंध',
+      titleEn: 'Lifetime Relationship',
+      desc: 'काम खत्म होने के बाद भी। मरम्मत, पॉलिश, सलाह — हमेशा उपलब्ध।',
+    },
+  ],
+  voiceNote: {
+    transcript: '"नमस्ते भाइयों और बुज़ुर्गों! मैं रामेश्वर शर्मा। 25 साल से अपनी इसी रामपुर की वर्कशॉप में अपने हाथों से काम करता हूँ। चाहे शादी का डबल बेड हो, चौखट-दरवाजे हों या एल्युमिनियम की जाली वाली खिड़कियाँ—हम सिर्फ 1 नंबर माल लगाते हैं। घर बैठे फोन घुमाइए, नाप लेने की कोई फीस नहीं है।"',
+    durationSeconds: 30,
+  },
+} as const
+
