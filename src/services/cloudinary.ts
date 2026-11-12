@@ -82,3 +82,4 @@ export async function uploadToCloudinary(
     xhr.send(formData)
   })
 }
+

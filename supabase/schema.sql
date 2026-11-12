@@ -119,3 +119,4 @@ CREATE POLICY "Allow anon deletes for village_pins" ON public.village_pins FOR D
 
 DROP POLICY IF EXISTS "Allow anon all for site_settings" ON public.site_settings;
 CREATE POLICY "Allow anon all for site_settings" ON public.site_settings FOR ALL USING (true);
+
