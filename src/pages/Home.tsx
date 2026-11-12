@@ -77,7 +77,7 @@ export default function Home() {
     { icon: 'shelves', nameHindi: 'अलमारी व वार्डरोब', nameEn: 'Almirahs', price: 9500 },
     { icon: 'bed', nameHindi: 'बेड और फर्नीचर', nameEn: 'Beds & Furniture', price: 12000 },
     { icon: 'temple_hindu', nameHindi: 'पूजा मंदिर', nameEn: 'Pooja Mandir', price: 2500 },
-    { icon: 'agriculture', nameHindi: 'ट्रॉली और शेड', nameEn: 'Farm & Shop', price: 1500 },
+    { icon: 'build', nameHindi: 'मरम्मत व पॉलिश', nameEn: 'Repairs & Polish', price: 250 },
   ]
 
   const villages = ['रामपुर', 'बिलासपुर', 'किठौर', 'दौराला', 'सरधना', 'मवाना', 'हस्तिनापुर', 'लावर', 'मुरादनगर', 'खतौली', 'गजरौला', 'पिलखुवा', 'अमरोहा', 'हापुड़', 'लोनी']

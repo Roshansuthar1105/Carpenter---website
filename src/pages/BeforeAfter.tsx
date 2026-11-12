@@ -130,20 +130,6 @@ export default function BeforeAfter() {
                     <p className="text-on-surface-variant text-sm mt-1">{t.title}</p>
                   </div>
 
-                  <div className="space-y-2">
-                    {[
-                      { icon: 'texture', label: 'सामग्री', value: t.specs.material },
-                      { icon: 'hardware', label: 'फिटिंग', value: t.specs.hardware },
-                      { icon: 'schedule', label: 'डिलीवरी', value: t.specs.delivery },
-                    ].map(spec => (
-                      <div key={spec.label} className="flex items-start gap-2 text-sm">
-                        <span className="material-symbols-outlined text-secondary" style={{ fontSize: '18px' }}>{spec.icon}</span>
-                        <span className="text-on-surface-variant font-label font-semibold w-20 shrink-0">{spec.label}:</span>
-                        <span className="text-on-surface">{spec.value}</span>
-                      </div>
-                    ))}
-                  </div>
-
                   <blockquote className="bg-surface-container-low rounded-xl p-4 border-l-4 border-secondary">
                     <p className="text-on-surface-variant text-sm italic leading-relaxed">{t.quote}</p>
                     <footer className="mt-2 text-xs font-label font-bold text-primary">— {t.quoteAuthorHindi}</footer>

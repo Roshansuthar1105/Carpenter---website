@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { SERVICES, WEDDING_COMBO, PRICE_CALCULATOR_ITEMS } from '../data/services'
+import { SERVICES } from '../data/services'
 
-type FilterType = 'all' | 'wood' | 'aluminium' | 'repair' | 'wedding'
+type FilterType = 'all' | 'wood' | 'aluminium' | 'repair'
 
 const FAQ_ITEMS = [
   { q: 'क्या शर्मा जी घर पर आकर नाप लेते हैं?', a: 'हाँ, 20 किमी के दायरे में बिल्कुल मुफ़्त घर पर नाप लिया जाता है। कोई छुपा हुआ शुल्क नहीं।' },
@@ -13,8 +13,6 @@ const FAQ_ITEMS = [
 
 export default function Services() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
-  const [selectedCalcItem, setSelectedCalcItem] = useState(0)
-  const [quantity, setQuantity] = useState(1)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
 
   const filteredServices = SERVICES.filter(s => {
@@ -25,15 +23,11 @@ export default function Services() {
     return false
   })
 
-  const calcItem = PRICE_CALCULATOR_ITEMS[selectedCalcItem]
-  const totalPrice = calcItem.pricePerUnit * quantity
-
   const filters: { key: FilterType; labelH: string }[] = [
     { key: 'all', labelH: 'सभी सेवाएँ' },
     { key: 'wood', labelH: 'लकड़ी (Wood)' },
     { key: 'aluminium', labelH: 'एल्युमिनियम (Aluminium)' },
     { key: 'repair', labelH: 'मरम्मत व पॉलिश' },
-    { key: 'wedding', labelH: 'शादी स्पेशल सेट' },
   ]
 
   return (
@@ -85,7 +79,7 @@ export default function Services() {
 
       {/* Services list */}
       <div className="max-w-7xl mx-auto px-4 py-8 w-full flex flex-col gap-10">
-        {activeFilter !== 'wedding' && filteredServices.map(cat => (
+        {filteredServices.map(cat => (
           <div key={cat.id}>
             <div className="flex items-center gap-3 mb-4">
               <span className="w-2 h-7 bg-secondary rounded-full inline-block" />
@@ -126,95 +120,6 @@ export default function Services() {
             </div>
           </div>
         ))}
-
-        {/* Wedding combo */}
-        {(activeFilter === 'all' || activeFilter === 'wedding') && (
-          <div className="relative overflow-hidden rounded-2xl p-6 shadow-lg border-2 border-secondary-container" style={{ background: 'linear-gradient(135deg, #ffdbc9 0%, #ffdcc3 100%)' }}>
-            <div className="flex flex-col lg:flex-row items-start gap-6">
-              <div className="flex-1">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary text-on-secondary text-xs font-bold uppercase mb-3">
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>celebration</span>
-                  शादी-विवाह स्पेशल महा-बचत सेट
-                </div>
-                <h3 className="font-headline font-bold text-primary text-2xl mb-2">{WEDDING_COMBO.titleHindi}</h3>
-                <div className="space-y-2 mb-4">
-                  {WEDDING_COMBO.items.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2 text-sm text-primary">
-                      <span className="material-symbols-outlined text-secondary" style={{ fontSize: '18px' }}>check_circle</span>
-                      {item}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <div>
-                    <span className="text-on-surface-variant text-sm line-through">सामान्य भाव: ₹{WEDDING_COMBO.marketPrice.toLocaleString('en-IN')}</span>
-                    <div className="font-headline font-bold text-secondary text-2xl">स्पेशल भाव: ₹{WEDDING_COMBO.offerPrice.toLocaleString('en-IN')}</div>
-                  </div>
-                  <span className="px-3 py-1 bg-error text-on-error rounded-full text-sm font-bold">₹{WEDDING_COMBO.savings.toLocaleString('en-IN')} की बचत</span>
-                </div>
-              </div>
-              <div className="w-full lg:w-72 bg-surface-container-lowest rounded-2xl p-4 shadow-md text-center shrink-0">
-                <img src={WEDDING_COMBO.image} alt="Wedding Furniture Set" className="w-full h-40 object-cover rounded-xl mb-3" loading="lazy" />
-                <p className="text-sm text-on-surface-variant mb-3">मात्र ₹2,100 देकर बुकिंग पक्की करें</p>
-                <a href={WEDDING_COMBO.whatsapp} target="_blank" rel="noopener noreferrer" className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-bold text-sm hover:opacity-90 transition-opacity" style={{ backgroundColor: '#15803d' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>event_available</span>
-                  शादी पैकेज बुक करें (WhatsApp)
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Budget calculator */}
-        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm" id="estimate-calc">
-          <div className="text-center mb-6">
-            <span className="text-secondary text-xs font-label uppercase tracking-widest font-bold">तुरंत हिसाब लगाएँ</span>
-            <h3 className="font-headline font-bold text-primary text-xl mt-1">अपना मोटा अनुमानित बजट कैलकुलेट करें</h3>
-          </div>
-          <div className="max-w-lg mx-auto space-y-4">
-            <div>
-              <label className="block font-label font-semibold text-primary text-sm mb-1">काम का प्रकार चुनें:</label>
-              <select
-                value={selectedCalcItem}
-                onChange={e => setSelectedCalcItem(Number(e.target.value))}
-                className="w-full p-3 rounded-lg bg-surface-container-low text-on-surface text-sm border border-outline-variant focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {PRICE_CALCULATOR_ITEMS.map((item, i) => (
-                  <option key={item.labelEn} value={i}>
-                    {item.label} — ₹{item.pricePerUnit.toLocaleString('en-IN')}/{item.unit}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-label font-semibold text-primary text-sm mb-1">संख्या: {quantity} {calcItem.unit}</label>
-              <input
-                type="range"
-                min="1"
-                max="20"
-                value={quantity}
-                onChange={e => setQuantity(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-xs text-on-surface-variant mt-1"><span>1</span><span>20</span></div>
-            </div>
-            <div className="bg-surface-container rounded-xl p-4 text-center">
-              <div className="text-on-surface-variant text-sm">अनुमानित कुल लागत</div>
-              <div className="font-headline font-extrabold text-secondary text-3xl mt-1">₹{totalPrice.toLocaleString('en-IN')}</div>
-              <div className="text-on-surface-variant text-xs mt-1">* यह अनुमान है। असली दाम सटीक नाप के बाद तय होगा।</div>
-            </div>
-            <a
-              href={`https://wa.me/919876543210?text=Namaste%20Sharma%20Ji%2C%20mujhe%20${quantity}%20${encodeURIComponent(calcItem.labelEn)}%20ke%20liye%20rate%20chahiye.%20Budget%20approx%20Rs.${totalPrice}.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-bold text-sm hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: '#15803d' }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>chat</span>
-              इस हिसाब से WhatsApp पर बात करें
-            </a>
-          </div>
-        </div>
 
         {/* FAQ */}
         <div>
