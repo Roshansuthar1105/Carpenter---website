@@ -2,9 +2,18 @@ import React, { useState, useEffect } from 'react'
 import { GALLERY, GalleryItem } from '../data/gallery'
 import { TRANSFORMATIONS, Transformation } from '../data/transformations'
 import { SERVICES } from '../data/services'
-import { VILLAGE_PINS, VillagePin } from '../data/villages'
+import { VILLAGE_PINS, VillagePin, WORKSHOP_LOCATION, calculateDistanceKm } from '../data/villages'
 import { uploadToCloudinary } from '../services/cloudinary'
 import { DataService } from '../services/dataService'
+import VoiceInput from '../components/common/VoiceInput'
+
+export interface GallerySelectedFile {
+  id: string
+  file: File
+  preview: string
+  name: string
+  size: string
+}
 
 type TabType = 'gallery' | 'beforeafter' | 'services' | 'villages' | 'settings' | 'sql'
 
@@ -34,8 +43,8 @@ export default function Admin() {
     material: 'wood',
     approxPrice: '8500',
   })
-  const [galleryFile, setGalleryFile] = useState<File | null>(null)
-  const [galleryPreview, setGalleryPreview] = useState<string>('')
+  const [galleryFiles, setGalleryFiles] = useState<GallerySelectedFile[]>([])
+  const [activeModalImage, setActiveModalImage] = useState<string | null>(null)
 
   // 2. Before & After Form
   const [baForm, setBaForm] = useState({
@@ -77,8 +86,42 @@ export default function Admin() {
   })
   const [villagePhotoFile, setVillagePhotoFile] = useState<File | null>(null)
   const [villagePhotoPreview, setVillagePhotoPreview] = useState<string>('')
+  const [villageMediaType, setVillageMediaType] = useState<'video' | 'audio'>('video')
   const [villageVideoFile, setVillageVideoFile] = useState<File | null>(null)
   const [villageVideoName, setVillageVideoName] = useState<string>('')
+  const [villageAudioFile, setVillageAudioFile] = useState<File | null>(null)
+  const [villageAudioName, setVillageAudioName] = useState<string>('')
+  const [villageAudioPreview, setVillageAudioPreview] = useState<string>('')
+  const [isFetchingGps, setIsFetchingGps] = useState(false)
+
+  const handleFetchGpsLocation = () => {
+    if (!navigator.geolocation) {
+      notify('ब्राउज़र में Geolocation समर्थित नहीं है।', 'error')
+      return
+    }
+    setIsFetchingGps(true)
+    notify('वर्तमान GPS निर्देशांक प्राप्त किए जा रहे हैं...', 'info')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsFetchingGps(false)
+        const lat = pos.coords.latitude
+        const lng = pos.coords.longitude
+        const dist = calculateDistanceKm(WORKSHOP_LOCATION.lat, WORKSHOP_LOCATION.lng, lat, lng)
+        setVillageForm(prev => ({
+          ...prev,
+          lat: lat.toFixed(4),
+          lng: lng.toFixed(4),
+          distanceKm: String(dist),
+        }))
+        notify(`GPS निर्देशांक प्राप्त: ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E (वर्कशॉप से ${dist} km)`, 'success')
+      },
+      (err) => {
+        setIsFetchingGps(false)
+        notify(`GPS त्रुटि: ${err.message}`, 'error')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
 
   // 4. Settings Form
   const [settings, setSettings] = useState({
@@ -115,37 +158,64 @@ export default function Admin() {
     }
   }
 
-  // Handle Gallery Submit
+  // Handle Gallery Submit (Multi-Image Batch Upload)
   const handleGallerySubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!galleryFile) {
-      notify('कृपया फोटो फाइल चुनें (Please select an image file to upload)', 'error')
+    if (galleryFiles.length === 0) {
+      notify('कृपया कम से कम एक फोटो चुनें (Please select at least one image file)', 'error')
       return
     }
 
     try {
       setIsUploading(true)
-      notify('Uploading photo to Cloudinary...', 'info')
-      const uploadRes = await uploadToCloudinary(galleryFile, {
-        onProgress: (p) => setUploadProgress(prev => ({ ...prev, gallery: p })),
-        folder: 'carpenter_gallery',
-      })
+      const uploadedItems: Array<{
+        title: string
+        titleHindi: string
+        village: string
+        category: string
+        material: string
+        imageUrl: string
+        approxPrice: number
+      }> = []
 
-      notify('Saving details to Supabase database...', 'info')
-      const res = await DataService.addGalleryItem({
-        title: galleryForm.title || 'Finished Work',
-        titleHindi: galleryForm.titleHindi || 'कारीगरी का कार्य',
-        village: galleryForm.village,
-        category: galleryForm.category,
-        material: galleryForm.material,
-        imageUrl: uploadRes.secure_url,
-        approxPrice: Number(galleryForm.approxPrice) || 0,
-      })
+      for (let i = 0; i < galleryFiles.length; i++) {
+        const item = galleryFiles[i]
+        notify(`फोटो अपलोड हो रही है ${i + 1}/${galleryFiles.length}: ${item.name}...`, 'info')
+
+        const uploadRes = await uploadToCloudinary(item.file, {
+          onProgress: (p) => {
+            const overall = Math.round(((i + p / 100) / galleryFiles.length) * 100)
+            setUploadProgress(prev => ({ ...prev, gallery: overall }))
+          },
+          folder: 'carpenter_gallery',
+        })
+
+        const titleHindi = galleryFiles.length > 1 && galleryForm.titleHindi
+          ? `${galleryForm.titleHindi} (${i + 1})`
+          : galleryForm.titleHindi || 'कारीगरी का कार्य'
+
+        const titleEn = galleryFiles.length > 1 && galleryForm.title
+          ? `${galleryForm.title} (${i + 1})`
+          : galleryForm.title || 'Finished Work'
+
+        uploadedItems.push({
+          title: titleEn,
+          titleHindi,
+          village: galleryForm.village || 'Rampur',
+          category: galleryForm.category,
+          material: galleryForm.material,
+          imageUrl: uploadRes.secure_url,
+          approxPrice: Number(galleryForm.approxPrice) || 0,
+        })
+      }
+
+      notify('डेटाबेस में सुरक्षित किया जा रहा है...', 'info')
+      const res = await DataService.addGalleryItemsBatch(uploadedItems)
 
       if (res.success) {
-        notify('फोटो क्लाउडिनरी और सुपबेस में सफलतापूर्वक सहेजी गई!', 'success')
-        setGalleryFile(null)
-        setGalleryPreview('')
+        notify(`${uploadedItems.length} तस्वीरें सफलतापूर्वक Cloudinary और Supabase में सहेजी गईं!`, 'success')
+        galleryFiles.forEach(f => URL.revokeObjectURL(f.preview))
+        setGalleryFiles([])
         setGalleryForm({ title: '', titleHindi: '', village: 'Rampur', category: 'doors', material: 'wood', approxPrice: '8500' })
         DataService.fetchGallery().then(setGalleryItems)
       } else {
@@ -217,33 +287,42 @@ export default function Admin() {
     }
   }
 
-  // Handle Village Pin & Video Submit
+  // Handle Village Pin & Video / Audio Submit
   const handleVillageSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!villagePhotoFile) {
-      notify('कृपया गाँव के कार्य की फोटो चुनें (Please select work photo)', 'error')
+      notify('कृपया गाँव के कार्य की 1:1 चौकोर फोटो चुनें (Please select 1:1 work photo)', 'error')
       return
     }
 
     try {
       setIsUploading(true)
-      notify('Uploading work photo to Cloudinary...', 'info')
+      notify('1:1 कार्य की फोटो Cloudinary पर अपलोड हो रही है...', 'info')
       const photoRes = await uploadToCloudinary(villagePhotoFile, {
         onProgress: (p) => setUploadProgress(prev => ({ ...prev, vPhoto: p })),
         folder: 'carpenter_villages',
       })
 
       let videoUrl = ''
-      if (villageVideoFile) {
-        notify('Uploading customer video (MP4) to Cloudinary...', 'info')
+      let audioUrl = ''
+
+      if (villageMediaType === 'video' && villageVideoFile) {
+        notify('9:16 वीडियो Cloudinary पर अपलोड हो रहा है...', 'info')
         const videoRes = await uploadToCloudinary(villageVideoFile, {
           onProgress: (p) => setUploadProgress(prev => ({ ...prev, vVideo: p })),
           folder: 'carpenter_videos',
         })
         videoUrl = videoRes.secure_url
+      } else if (villageMediaType === 'audio' && villageAudioFile) {
+        notify('MP3 ग्राहक ऑडियो Cloudinary पर अपलोड हो रहा है...', 'info')
+        const audioRes = await uploadToCloudinary(villageAudioFile, {
+          onProgress: (p) => setUploadProgress(prev => ({ ...prev, vAudio: p })),
+          folder: 'carpenter_audios',
+        })
+        audioUrl = audioRes.secure_url
       }
 
-      notify('Saving village pin to Supabase...', 'info')
+      notify('गाँव का पिन Supabase में सहेजा जा रहा है...', 'info')
       const res = await DataService.addVillagePin({
         name: villageForm.name,
         nameHindi: villageForm.nameHindi || villageForm.name,
@@ -256,6 +335,7 @@ export default function Admin() {
         featuredWorkTitleHindi: villageForm.featuredWorkTitleHindi || `${villageForm.nameHindi} कार्य`,
         imageUrl: photoRes.secure_url,
         videoUrl,
+        audioUrl,
         quote: villageForm.quote || 'शर्मा जी का काम बहुत मजबूत और समय पर हुआ।',
         quoteAuthor: villageForm.quoteAuthor || `${villageForm.name} Customer`,
         workType: villageForm.workType,
@@ -265,11 +345,14 @@ export default function Admin() {
       })
 
       if (res.success) {
-        notify('गाँव का पिन व वीडियो सफलतापूर्वक लाइव मैप पर जुड़ गया!', 'success')
+        notify('गाँव का 1:1 पिन और मीडिया सफलतापूर्वक लाइव मैप पर जुड़ गया!', 'success')
         setVillagePhotoFile(null)
         setVillageVideoFile(null)
+        setVillageAudioFile(null)
         setVillagePhotoPreview('')
         setVillageVideoName('')
+        setVillageAudioName('')
+        setVillageAudioPreview('')
         DataService.fetchVillagePins().then(setVillagePins)
       } else {
         notify(`Supabase error: ${res.error}`, 'error')
@@ -278,7 +361,7 @@ export default function Admin() {
       notify(`Village upload failed: ${err.message}`, 'error')
     } finally {
       setIsUploading(false)
-      setUploadProgress(prev => ({ ...prev, vPhoto: 0, vVideo: 0 }))
+      setUploadProgress(prev => ({ ...prev, vPhoto: 0, vVideo: 0, vAudio: 0 }))
     }
   }
 
@@ -507,43 +590,131 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
               </p>
 
               <form onSubmit={handleGallerySubmit} className="space-y-4">
-                {/* File Upload Dropzone */}
+                {/* Multi-Image File Upload Dropzone */}
                 <div>
-                  <label className="block font-label font-bold text-on-surface text-sm mb-1">
-                    कार्य की फोटो चुनें (Select Work Image) *
-                  </label>
-                  <div className="border-2 border-dashed border-outline-variant rounded-xl p-4 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-label font-bold text-on-surface text-sm">
+                      कार्य की तस्वीरें चुनें (Select Single or Multiple Work Photos) *
+                    </label>
+                    {galleryFiles.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          galleryFiles.forEach(f => URL.revokeObjectURL(f.preview))
+                          setGalleryFiles([])
+                        }}
+                        className="text-xs text-error font-semibold hover:underline flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete_sweep</span>
+                        सभी हटाएं (Clear All {galleryFiles.length})
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="border-2 border-dashed border-outline-variant rounded-2xl p-4 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative bg-surface-container-lowest">
                     <input
                       type="file"
                       accept="image/*"
-                      required
+                      multiple
+                      required={galleryFiles.length === 0}
                       onChange={e => {
-                        const file = e.target.files?.[0]
-                        if (file) {
-                          setGalleryFile(file)
-                          setGalleryPreview(URL.createObjectURL(file))
+                        if (e.target.files) {
+                          const newItems = Array.from(e.target.files).map(file => ({
+                            id: `${file.name}-${Date.now()}-${Math.random()}`,
+                            file,
+                            preview: URL.createObjectURL(file),
+                            name: file.name,
+                            size: file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+                          }))
+                          setGalleryFiles(prev => [...prev, ...newItems])
                         }
                       }}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
-                    {galleryPreview ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <img src={galleryPreview} alt="Preview" className="h-40 rounded-lg object-cover shadow" />
-                        <span className="text-xs text-secondary font-bold">फोटो बदली जा सकती है (Click to change)</span>
-                      </div>
-                    ) : (
-                      <div className="py-6 flex flex-col items-center gap-2">
-                        <span className="material-symbols-outlined text-4xl text-primary">cloud_upload</span>
-                        <span className="font-label font-bold text-sm text-primary">फोटो चुनने के लिए यहाँ टैप करें</span>
-                        <span className="text-xs text-on-surface-variant">JPG, PNG, WebP (स्मार्टफोन फोटो स्वीकृत)</span>
-                      </div>
-                    )}
+                    <div className="py-4 flex flex-col items-center gap-2">
+                      <span className="material-symbols-outlined text-4xl text-primary">add_photo_alternate</span>
+                      <span className="font-label font-bold text-sm text-primary">
+                        {galleryFiles.length === 0
+                          ? 'एक या एक से अधिक फोटो चुनने के लिए यहाँ टैप करें'
+                          : `+ और फोटो जोड़ें (${galleryFiles.length} चुनी जा चुकी हैं)`}
+                      </span>
+                      <span className="text-xs text-on-surface-variant">
+                        JPG, PNG, WebP • एक साथ कई फोटो सेलेक्ट कर सकते हैं (Multiple Selection Allowed)
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Previews for Each Given Image */}
+                  {galleryFiles.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-xs font-label font-bold text-on-surface-variant mb-2 flex items-center justify-between">
+                        <span>फोटो पूर्वावलोकन ({galleryFiles.length} तस्वीरें तैयार)</span>
+                        <span className="text-[11px] text-tertiary">किसी भी फोटो पर क्लिक करके बड़ा देखें</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                        {galleryFiles.map((item, idx) => (
+                          <div
+                            key={item.id}
+                            className="group relative bg-surface-container rounded-xl overflow-hidden border border-outline-variant/60 shadow-sm flex flex-col"
+                          >
+                            <div className="relative aspect-square w-full overflow-hidden bg-black/5">
+                              <img
+                                src={item.preview}
+                                alt={item.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                              <span className="absolute top-1.5 left-1.5 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                #{idx + 1}
+                              </span>
+                              {/* Hover Overlay with View and Remove buttons */}
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setActiveModalImage(item.preview)
+                                  }}
+                                  title="बड़ा पूर्वावलोकन देखें"
+                                  className="w-7 h-7 rounded-full bg-white/90 text-primary flex items-center justify-center hover:bg-white shadow"
+                                >
+                                  <span className="material-symbols-outlined text-sm">zoom_in</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    URL.revokeObjectURL(item.preview)
+                                    setGalleryFiles(prev => prev.filter(f => f.id !== item.id))
+                                  }}
+                                  title="हटाएं"
+                                  className="w-7 h-7 rounded-full bg-error text-on-error flex items-center justify-center hover:opacity-90 shadow"
+                                >
+                                  <span className="material-symbols-outlined text-sm">delete</span>
+                                </button>
+                              </div>
+                            </div>
+                            <div className="p-2 text-[10px] bg-white">
+                              <div className="font-semibold truncate text-on-surface" title={item.name}>{item.name}</div>
+                              <div className="text-on-surface-variant font-mono">{item.size}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">शीर्षक (Hindi Title) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-on-surface text-xs">शीर्षक (Hindi Title) *</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={galleryForm.titleHindi}
+                        onResult={(val) => setGalleryForm(f => ({ ...f, titleHindi: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       required
@@ -554,7 +725,15 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                     />
                   </div>
                   <div>
-                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">English Title</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-on-surface text-xs">English Title</label>
+                      <VoiceInput
+                        defaultLanguage="en-IN"
+                        currentValue={galleryForm.title}
+                        onResult={(val) => setGalleryForm(f => ({ ...f, title: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       placeholder="e.g. Carved Sagwan Main Door"
@@ -564,7 +743,15 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                     />
                   </div>
                   <div>
-                    <label className="block font-label font-semibold text-on-surface text-xs mb-1">गाँव / स्थान (Village)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-on-surface text-xs">गाँव / स्थान (Village)</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={galleryForm.village}
+                        onResult={(val) => setGalleryForm(f => ({ ...f, village: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       placeholder="Rampur"
@@ -754,7 +941,15 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-label font-semibold text-xs mb-1">शीर्षक (Hindi Title) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">शीर्षक (Hindi Title) *</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={baForm.titleHindi}
+                        onResult={(val) => setBaForm(f => ({ ...f, titleHindi: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       required
@@ -765,7 +960,15 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                     />
                   </div>
                   <div>
-                    <label className="block font-label font-semibold text-xs mb-1">गाँव (Village Hindi) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">गाँव (Village Hindi) *</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={baForm.villageHindi}
+                        onResult={(val) => setBaForm(f => ({ ...f, villageHindi: val, village: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       required
@@ -796,7 +999,15 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block font-label font-semibold text-xs mb-1">ग्राहक की समीक्षा / प्रशंसा पत्र (Customer Quote)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">ग्राहक की समीक्षा / प्रशंसा पत्र (Customer Quote)</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={baForm.quote}
+                        onResult={(val) => setBaForm(f => ({ ...f, quote: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <textarea
                       rows={2}
                       placeholder="उदा: शर्मा जी ने 7 दिन में बिल्कुल वैसा दरवाजा बनाया जैसा सोचा था।"
@@ -836,30 +1047,50 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
           </div>
         )}
 
-        {/* 3. VILLAGE PINS & VIDEO REVIEWS TAB */}
+        {/* 3. VILLAGE PINS & VIDEO / AUDIO REVIEWS TAB */}
         {activeTab === 'villages' && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-outline-variant/60">
-              <h3 className="font-headline font-bold text-primary text-lg mb-2 flex items-center gap-2">
-                <span className="material-symbols-outlined text-secondary">pin_drop</span>
-                नया गाँव पिन और ग्राहक वीडियो जोड़ें (Google Map GPS + Video Upload)
-              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                <h3 className="font-headline font-bold text-primary text-lg flex items-center gap-2">
+                  <span className="material-symbols-outlined text-secondary">pin_drop</span>
+                  नया गाँव पिन, 1:1 फोटो व 9:16 वीडियो / ऑडियो रिव्यू जोड़ें
+                </h3>
+
+                {/* GPS Location Auto-Fetch Button */}
+                <button
+                  type="button"
+                  onClick={handleFetchGpsLocation}
+                  disabled={isFetchingGps}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-secondary text-on-secondary rounded-xl text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0"
+                >
+                  <span className={`material-symbols-outlined text-base ${isFetchingGps ? 'animate-spin' : ''}`}>
+                    {isFetchingGps ? 'sync' : 'my_location'}
+                  </span>
+                  <span>{isFetchingGps ? 'लोकेशन खोजी जा रही है...' : '📍 वर्तमान GPS लोकेशन भरें (Fetch GPS)'}</span>
+                </button>
+              </div>
+
               <p className="text-on-surface-variant text-xs mb-5">
-                गाँव का नाम और वास्तविक GPS निर्देशांक भरें। ग्राहक का 30-60 सेकंड का वीडियो सीधे अपलोड करें।
+                फील्ड पर रहते हुए तुरंत लोकेशन डिटेक्ट करें। 1:1 अनुपात की चौकोर फोटो और 9:16 वर्टिकल वीडियो या MP3 वॉयस रिव्यू जोड़ें।
               </p>
 
-              <form onSubmit={handleVillageSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Work Photo Upload */}
+              <form onSubmit={handleVillageSubmit} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* 1:1 Work Photo Upload with Square Guide */}
                   <div>
-                    <label className="block font-label font-bold text-on-surface text-xs mb-1">
-                      गाँव के कार्य की फोटो (Work Photo) *
-                    </label>
-                    <div className="border-2 border-dashed border-outline-variant rounded-xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-bold text-on-surface text-xs">
+                        मैप पिन के लिए 1:1 चौकोर फोटो (1:1 Toolpin Photo) *
+                      </label>
+                      <span className="text-[10px] text-secondary font-mono font-bold">1:1 Square</span>
+                    </div>
+
+                    <div className="border-2 border-dashed border-outline-variant rounded-2xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative bg-surface-container-lowest">
                       <input
                         type="file"
                         accept="image/*"
-                        required
+                        required={!villagePhotoFile}
                         onChange={e => {
                           const file = e.target.files?.[0]
                           if (file) {
@@ -867,103 +1098,209 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                             setVillagePhotoPreview(URL.createObjectURL(file))
                           }
                         }}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                       />
                       {villagePhotoPreview ? (
-                        <img src={villagePhotoPreview} alt="Work" className="h-28 mx-auto rounded-lg object-cover shadow" />
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="aspect-square w-36 rounded-xl overflow-hidden shadow-md ring-2 ring-secondary/50 relative">
+                            <img src={villagePhotoPreview} alt="1:1 Toolpin Work" className="w-full h-full object-cover" />
+                            <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
+                              1:1 Toolpin
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-secondary font-bold">फोटो बदली जा सकती है (Click to change)</span>
+                        </div>
                       ) : (
-                        <div className="py-3 flex flex-col items-center gap-1">
-                          <span className="material-symbols-outlined text-2xl text-primary">photo_camera</span>
-                          <span className="text-xs font-bold text-primary">कार्य की फोटो चुनें</span>
+                        <div className="py-4 flex flex-col items-center gap-1.5">
+                          <div className="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-primary">
+                            <span className="material-symbols-outlined text-2xl">crop_square</span>
+                          </div>
+                          <span className="text-xs font-bold text-primary">1:1 कार्य की फोटो चुनें या कैमरा खोलें</span>
+                          <span className="text-[10px] text-on-surface-variant">मैप पिन पर 1:1 चौकोर अनुपात में दिखेगी</span>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Customer Video Upload */}
+                  {/* Customer Review Media: 9:16 Video OR MP3 Audio */}
                   <div>
-                    <label className="block font-label font-bold text-on-surface text-xs mb-1">
-                      ग्राहक का वीडियो फीडबैक (30-60s MP4/Video Upload)
-                    </label>
-                    <div className="border-2 border-dashed border-outline-variant rounded-xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative">
-                      <input
-                        type="file"
-                        accept="video/*"
-                        onChange={e => {
-                          const file = e.target.files?.[0]
-                          if (file) {
-                            setVillageVideoFile(file)
-                            setVillageVideoName(file.name)
-                          }
-                        }}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                      {villageVideoName ? (
-                        <div className="py-4 flex flex-col items-center gap-1 text-secondary font-bold text-xs">
-                          <span className="material-symbols-outlined text-3xl">videocam</span>
-                          <span>{villageVideoName}</span>
-                          <span className="text-[10px] text-on-surface-variant font-normal">क्लिक करके बदलें</span>
-                        </div>
-                      ) : (
-                        <div className="py-3 flex flex-col items-center gap-1">
-                          <span className="material-symbols-outlined text-2xl text-secondary">video_call</span>
-                          <span className="text-xs font-bold text-secondary">वीडियो फाइल चुनें (MP4/MOV)</span>
-                        </div>
-                      )}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="font-label font-bold text-on-surface text-xs">
+                        ग्राहक समीक्षा मीडिया (Review Media)
+                      </label>
+                      {/* Media Mode Selector */}
+                      <div className="flex bg-surface-container p-0.5 rounded-lg border border-outline-variant">
+                        <button
+                          type="button"
+                          onClick={() => setVillageMediaType('video')}
+                          className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${
+                            villageMediaType === 'video'
+                              ? 'bg-primary text-on-primary shadow-sm'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-sm">videocam</span>
+                          9:16 वीडियो
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVillageMediaType('audio')}
+                          className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${
+                            villageMediaType === 'audio'
+                              ? 'bg-secondary text-on-secondary shadow-sm'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-sm">mic</span>
+                          MP3 ऑडियो
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Mode 1: 9:16 Video Upload / Capture */}
+                    {villageMediaType === 'video' ? (
+                      <div className="border-2 border-dashed border-outline-variant rounded-2xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative bg-surface-container-lowest">
+                        <input
+                          type="file"
+                          accept="video/*"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setVillageVideoFile(file)
+                              setVillageVideoName(file.name)
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        {villageVideoName ? (
+                          <div className="py-4 flex flex-col items-center gap-1.5 text-secondary font-bold text-xs">
+                            <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+                              <span className="material-symbols-outlined text-2xl">videocam</span>
+                            </div>
+                            <span>{villageVideoName}</span>
+                            <span className="text-[10px] text-on-surface-variant font-normal">9:16 वर्टिकल वीडियो चुना गया (Click to change)</span>
+                          </div>
+                        ) : (
+                          <div className="py-4 flex flex-col items-center gap-1.5">
+                            <span className="material-symbols-outlined text-3xl text-secondary">video_camera_front</span>
+                            <span className="text-xs font-bold text-secondary">9:16 वीडियो चुनें या रिकॉर्ड करें</span>
+                            <span className="text-[10px] text-on-surface-variant">MP4, MOV (स्मार्टफोन 9:16 रील वीडियो)</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Mode 2: MP3 Voice Audio Review Upload */
+                      <div className="border-2 border-dashed border-outline-variant rounded-2xl p-3 text-center hover:bg-surface-container-low transition-colors cursor-pointer relative bg-surface-container-lowest">
+                        <input
+                          type="file"
+                          accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setVillageAudioFile(file)
+                              setVillageAudioName(file.name)
+                              setVillageAudioPreview(URL.createObjectURL(file))
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        {villageAudioName ? (
+                          <div className="py-2 flex flex-col items-center gap-2">
+                            <div className="flex items-center gap-2 text-secondary font-bold text-xs">
+                              <span className="material-symbols-outlined text-2xl">mic</span>
+                              <span>{villageAudioName}</span>
+                            </div>
+                            {villageAudioPreview && (
+                              <audio
+                                src={villageAudioPreview}
+                                controls
+                                className="w-full max-w-xs h-9 mt-1 relative z-20"
+                                onClick={e => e.stopPropagation()}
+                              />
+                            )}
+                            <span className="text-[10px] text-on-surface-variant">क्लिक करके बदलें (MP3/WAV/M4A)</span>
+                          </div>
+                        ) : (
+                          <div className="py-4 flex flex-col items-center gap-1.5">
+                            <div className="w-10 h-10 rounded-full bg-secondary/15 flex items-center justify-center text-secondary">
+                              <span className="material-symbols-outlined text-2xl">mic</span>
+                            </div>
+                            <span className="text-xs font-bold text-secondary">MP3 ग्राहक वॉयस रिकॉर्डिंग चुनें</span>
+                            <span className="text-[10px] text-on-surface-variant">Cloudinary पर सीधे स्टोर होगी • MP3, M4A, WAV</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-label font-semibold text-xs mb-1">गाँव का नाम (English)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">गाँव का नाम (English) *</label>
+                      <VoiceInput
+                        defaultLanguage="en-IN"
+                        currentValue={villageForm.name}
+                        onResult={(val) => setVillageForm(f => ({ ...f, name: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Sardhana"
                       value={villageForm.name}
                       onChange={e => setVillageForm(f => ({ ...f, name: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block font-label font-semibold text-xs mb-1">गाँव का नाम (Hindi)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">गाँव का नाम (Hindi) *</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={villageForm.nameHindi}
+                        onResult={(val) => setVillageForm(f => ({ ...f, nameHindi: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       placeholder="उदा: सरधना"
                       value={villageForm.nameHindi}
                       onChange={e => setVillageForm(f => ({ ...f, nameHindi: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     />
                   </div>
                   <div>
                     <label className="block font-label font-semibold text-xs mb-1">दूरी किमी (Distance in KM)</label>
                     <input
                       type="number"
+                      step="0.1"
                       placeholder="18"
                       value={villageForm.distanceKm}
                       onChange={e => setVillageForm(f => ({ ...f, distanceKm: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block font-label font-semibold text-xs mb-1">GPS Latitude (अक्षांश)</label>
+                    <label className="block font-label font-semibold text-xs mb-1">GPS Latitude (अक्षांश N)</label>
                     <input
                       type="text"
                       placeholder="29.1500"
                       value={villageForm.lat}
                       onChange={e => setVillageForm(f => ({ ...f, lat: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none font-mono"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block font-label font-semibold text-xs mb-1">GPS Longitude (देशांतर)</label>
+                    <label className="block font-label font-semibold text-xs mb-1">GPS Longitude (देशांतर E)</label>
                     <input
                       type="text"
                       placeholder="77.6167"
                       value={villageForm.lng}
                       onChange={e => setVillageForm(f => ({ ...f, lng: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none font-mono"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none font-mono"
                     />
                   </div>
                   <div>
@@ -973,20 +1310,90 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                       placeholder="50"
                       value={villageForm.workCount}
                       onChange={e => setVillageForm(f => ({ ...f, workCount: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     />
                   </div>
                   <div className="md:col-span-3">
-                    <label className="block font-label font-semibold text-xs mb-1">प्रमुख कार्य शीर्षक (Featured Work Hindi)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">प्रमुख कार्य शीर्षक (Featured Work Hindi) *</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={villageForm.featuredWorkTitleHindi}
+                        onResult={(val) => setVillageForm(f => ({ ...f, featuredWorkTitleHindi: val }))}
+                        size="sm"
+                      />
+                    </div>
                     <input
                       type="text"
                       placeholder="उदा: पुरातन हवेली का सागवान चौखट व नक्काशी रीस्टोरेशन"
                       value={villageForm.featuredWorkTitleHindi}
                       onChange={e => setVillageForm(f => ({ ...f, featuredWorkTitleHindi: e.target.value }))}
-                      className="w-full p-2 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">ग्राहक की समीक्षा / प्रशंसा पत्र (Customer Quote)</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={villageForm.quote}
+                        onResult={(val) => setVillageForm(f => ({ ...f, quote: val }))}
+                        size="sm"
+                      />
+                    </div>
+                    <textarea
+                      rows={2}
+                      placeholder="उदा: शर्मा जी का काम बहुत मजबूत और समय पर हुआ।"
+                      value={villageForm.quote}
+                      onChange={e => setVillageForm(f => ({ ...f, quote: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-label font-semibold text-xs">ग्राहक का नाम (Customer Author)</label>
+                      <VoiceInput
+                        defaultLanguage="hi-IN"
+                        currentValue={villageForm.quoteAuthor}
+                        onResult={(val) => setVillageForm(f => ({ ...f, quoteAuthor: val }))}
+                        size="sm"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="उदा: सुखबीर जी (रामपुर)"
+                      value={villageForm.quoteAuthor}
+                      onChange={e => setVillageForm(f => ({ ...f, quoteAuthor: e.target.value }))}
+                      className="w-full p-2.5 rounded-lg border border-outline-variant text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     />
                   </div>
                 </div>
+
+                {/* Progress Indicators */}
+                {isUploading && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs font-bold text-primary">
+                      <span>Cloudinary Uploading...</span>
+                      <span>
+                        {uploadProgress.vPhoto || uploadProgress.vVideo || uploadProgress.vAudio || 0}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-surface-container overflow-hidden">
+                      <div
+                        className="h-full bg-secondary transition-all duration-300"
+                        style={{
+                          width: `${Math.max(
+                            uploadProgress.vPhoto || 0,
+                            uploadProgress.vVideo || 0,
+                            uploadProgress.vAudio || 0
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <button
                   type="submit"
@@ -994,7 +1401,7 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
                   className="py-3 px-6 rounded-xl font-bold text-sm bg-primary text-on-primary hover:opacity-90 transition-opacity flex items-center gap-2 shadow disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-lg">add_location_alt</span>
-                  {isUploading ? 'अपलोड जारी है...' : 'गाँव पिन व वीडियो सहेजें (Save Village Pin)'}
+                  {isUploading ? 'अपलोड जारी है...' : 'गाँव का 1:1 पिन व मीडिया सहेजें (Save Village Pin)'}
                 </button>
               </form>
             </div>
@@ -1005,27 +1412,35 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
               <table className="w-full text-xs">
                 <thead className="bg-surface-container-low font-bold text-on-surface-variant">
                   <tr>
+                    <th className="px-3 py-2 text-left">1:1 फोटो</th>
                     <th className="px-3 py-2 text-left">गाँव</th>
                     <th className="px-3 py-2 text-left">GPS (Lat, Lng)</th>
                     <th className="px-3 py-2 text-left">दूरी</th>
                     <th className="px-3 py-2 text-left">कार्य संख्या</th>
-                    <th className="px-3 py-2 text-left">वीडियो</th>
+                    <th className="px-3 py-2 text-left">मीडिया प्रकार</th>
                   </tr>
                 </thead>
                 <tbody>
                   {villagePins.map(p => (
                     <tr key={p.id} className="border-t border-outline-variant hover:bg-surface-container-low">
+                      <td className="px-3 py-2">
+                        <img src={p.image} alt={p.name} className="w-10 h-10 aspect-square object-cover rounded-lg shadow-sm" />
+                      </td>
                       <td className="px-3 py-2 font-bold text-on-surface">{p.nameHindi} ({p.name})</td>
-                      <td className="px-3 py-2 font-mono text-tertiary">{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</td>
+                      <td className="px-3 py-2 font-mono text-tertiary">{Number(p.lat).toFixed(4)}, {Number(p.lng).toFixed(4)}</td>
                       <td className="px-3 py-2">{p.distanceKm} km</td>
                       <td className="px-3 py-2 font-bold text-secondary">{p.workCount}+ घर</td>
                       <td className="px-3 py-2">
                         {p.videoUrl ? (
-                          <span className="text-[#15803d] font-bold inline-flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm">videocam</span> हाँ
+                          <span className="text-[#15803d] font-bold inline-flex items-center gap-1 bg-[#15803d]/10 px-2 py-0.5 rounded-full">
+                            <span className="material-symbols-outlined text-xs">videocam</span> 9:16 Video
+                          </span>
+                        ) : p.audioUrl ? (
+                          <span className="text-secondary font-bold inline-flex items-center gap-1 bg-secondary/10 px-2 py-0.5 rounded-full">
+                            <span className="material-symbols-outlined text-xs">mic</span> MP3 Audio
                           </span>
                         ) : (
-                          <span className="text-on-surface-variant">पोस्टर मात्र</span>
+                          <span className="text-on-surface-variant">1:1 Image</span>
                         )}
                       </td>
                     </tr>
@@ -1191,6 +1606,40 @@ CREATE POLICY "Anon insert village_pins" ON public.village_pins FOR INSERT WITH 
           </div>
         )}
       </div>
+
+      {/* Image Preview Lightbox Modal */}
+      {activeModalImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setActiveModalImage(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] bg-surface-container-lowest rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3 bg-surface-container border-b border-outline-variant">
+              <span className="text-xs font-bold text-primary font-label flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-base text-secondary">image</span>
+                पूर्वावलोकन (Image Preview)
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveModalImage(null)}
+                className="w-8 h-8 rounded-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface flex items-center justify-center transition-colors"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            <div className="p-2 flex items-center justify-center overflow-auto max-h-[80vh]">
+              <img
+                src={activeModalImage}
+                alt="Enlarged Preview"
+                className="max-w-full max-h-[75vh] object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

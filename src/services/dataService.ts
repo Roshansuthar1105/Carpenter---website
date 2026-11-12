@@ -116,6 +116,8 @@ export const DataService = {
         featuredWorkTitleHindi: d.featured_work_title_hindi,
         image: d.image_url,
         videoUrl: d.video_url || '',
+        audioUrl: d.audio_url || '',
+        mediaType: d.video_url ? 'video' : d.audio_url ? 'audio' : 'image',
         quote: d.quote || '',
         quoteAuthor: d.quote_author || '',
         workType: d.work_type || '',
@@ -165,6 +167,43 @@ export const DataService = {
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err?.message || String(err) }
+    }
+  },
+
+  async addGalleryItemsBatch(items: Array<{
+    category: string
+    title: string
+    titleHindi: string
+    village: string
+    material: string
+    imageUrl: string
+    approxPrice: number
+  }>): Promise<{ success: boolean; count: number; error?: string }> {
+    if (!supabase) {
+      return { success: false, count: 0, error: 'Supabase client not initialized. Check .env' }
+    }
+    if (!items || items.length === 0) {
+      return { success: true, count: 0 }
+    }
+
+    try {
+      const records = items.map(item => ({
+        category: item.category,
+        title: item.title,
+        title_hindi: item.titleHindi,
+        village: item.village,
+        material: item.material,
+        image_url: item.imageUrl,
+        approx_price: item.approxPrice,
+      }))
+
+      const { error } = await supabase.from('gallery').insert(records)
+      if (error) {
+        return { success: false, count: 0, error: error.message }
+      }
+      return { success: true, count: items.length }
+    } catch (err: any) {
+      return { success: false, count: 0, error: err?.message || String(err) }
     }
   },
 
@@ -229,6 +268,7 @@ export const DataService = {
     featuredWorkTitleHindi: string
     imageUrl: string
     videoUrl?: string
+    audioUrl?: string
     quote: string
     quoteAuthor: string
     workType: string
@@ -254,6 +294,7 @@ export const DataService = {
           featured_work_title_hindi: pin.featuredWorkTitleHindi,
           image_url: pin.imageUrl,
           video_url: pin.videoUrl || '',
+          audio_url: pin.audioUrl || '',
           quote: pin.quote,
           quote_author: pin.quoteAuthor,
           work_type: pin.workType,

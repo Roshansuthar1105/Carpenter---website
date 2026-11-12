@@ -33,8 +33,9 @@ export async function uploadToCloudinary(
     throw new Error('VITE_CLOUDINARY_UPLOAD_PRESET is not configured in .env')
   }
 
+  const isAudio = file.type.startsWith('audio/') || Boolean(file.name.match(/\.(mp3|wav|m4a|aac|ogg|opus|webm|flac)$/i))
   const isVideo = file.type.startsWith('video/')
-  const resourceType = isVideo ? 'video' : 'image'
+  const resourceType = (isVideo || isAudio) ? 'video' : 'image'
   const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`
 
   const formData = new FormData()

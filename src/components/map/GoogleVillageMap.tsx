@@ -174,11 +174,13 @@ export default function GoogleVillageMap({
             <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-1.5 pointer-events-auto">
               {pins.map(pin => {
                 const isSelected = pin.id === selectedPin.id
+                const hasVideo = Boolean(pin.videoUrl)
+                const hasAudio = Boolean(pin.audioUrl)
                 return (
                   <button
                     key={pin.id}
                     onClick={() => onSelectPin(pin)}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-label font-bold shadow-md transition-all ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-label font-bold shadow-md transition-all ${
                       isSelected
                         ? 'bg-secondary text-on-secondary ring-2 ring-white scale-105'
                         : 'bg-white/95 text-on-surface hover:bg-surface-container'
@@ -189,17 +191,58 @@ export default function GoogleVillageMap({
                       {pin.id === 'rampur' ? 'home_pin' : 'location_on'}
                     </span>
                     <span>{pin.name}</span>
+                    {hasVideo && (
+                      <span className="text-[10px] bg-red-600 text-white px-1 py-0.2 rounded-full font-mono font-bold" title="9:16 Video Available">
+                        9:16
+                      </span>
+                    )}
+                    {hasAudio && (
+                      <span className="text-[10px] bg-amber-700 text-white px-1 py-0.2 rounded-full font-mono font-bold" title="MP3 Voice Review Available">
+                        MP3
+                      </span>
+                    )}
                     <span className="text-[10px] opacity-75">({pin.distanceKm}km)</span>
                   </button>
                 )
               })}
             </div>
 
+            {/* Selected Toolpin 1:1 Preview Card Overlay */}
+            {selectedPin && (
+              <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-md p-2 rounded-xl shadow-lg border border-outline-variant/60 flex items-center gap-2 max-w-xs transition-all pointer-events-auto">
+                <img
+                  src={selectedPin.image}
+                  alt={selectedPin.name}
+                  className="w-12 h-12 aspect-square rounded-lg object-cover ring-1 ring-outline-variant/40 shrink-0"
+                />
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="font-bold text-xs text-primary truncate">{selectedPin.nameHindi} ({selectedPin.name})</div>
+                  <div className="text-[10px] text-on-surface-variant truncate">{selectedPin.featuredWorkTitleHindi}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {selectedPin.videoUrl ? (
+                      <span className="text-[9px] bg-red-600 text-white font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <span className="material-symbols-outlined text-[10px]">play_circle</span> 9:16 रील
+                      </span>
+                    ) : selectedPin.audioUrl ? (
+                      <span className="text-[9px] bg-amber-700 text-white font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <span className="material-symbols-outlined text-[10px]">mic</span> MP3 ऑडियो
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-surface-container-high text-on-surface-variant font-bold px-1.5 py-0.5 rounded">
+                        1:1 फोटो
+                      </span>
+                    )}
+                    <span className="text-[10px] text-tertiary font-mono">{selectedPin.distanceKm} km</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* GPS Coordinates readout */}
             <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md rounded-lg px-3 py-1.5 text-xs shadow flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
               <span className="font-mono text-tertiary font-semibold">
-                GPS: {selectedPin.lat.toFixed(4)}°N, {selectedPin.lng.toFixed(4)}°E ({selectedPin.name})
+                GPS: {Number(selectedPin.lat).toFixed(4)}°N, {Number(selectedPin.lng).toFixed(4)}°E ({selectedPin.name})
               </span>
             </div>
           </div>

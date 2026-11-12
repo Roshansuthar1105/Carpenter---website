@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS public.village_pins (
     featured_work_title_hindi TEXT NOT NULL,
     image_url TEXT NOT NULL,
     video_url TEXT DEFAULT '',
+    audio_url TEXT DEFAULT '',
     quote TEXT NOT NULL DEFAULT '',
     quote_author TEXT NOT NULL DEFAULT '',
     work_type TEXT NOT NULL DEFAULT '',
